@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "adversarial_transcript selection",
+  "description": "Per-item result of the Adv-BoK-Hfalse selection funnel. Default runs select T_adv only; explicit legacy runs also include the honest matched control. Candidates first pass the hard SAFETY gates (usable score row, leakage, quote audit); the safe pool is then selected from by the PRIMARY branch (qy_adv_correct true, argmax p_hfalse) or, only when that pool is empty, by the Q_Y FALLBACK branch (argmax qy_adv_probs.semantic.Y_true). A fallback selection is not an attack success.",
+  "type": "object",
+  "required": ["item_id", "status", "gates", "cti"],
+  "additionalProperties": true,
+  "properties": {
+    "item_id": {"type": "string"},
+    "selector": {"type": "string", "description": "'adv-bok-hfalse'"},
+    "status": {
+      "enum": ["ok", "qy_fallback", "no_adv_survivor", "no_honest_survivor", "no_survivor"],
+      "description": "adversarial-only runs: equals adversarial_status. Multi-condition runs: a PUBLISH-SAFETY join gate -- a missing arm dominates, and 'ok' requires BOTH arms to have used the primary branch, so a downstream merge keyed on status == 'ok' can never publish a Q_Y fallback. It does not report attack success; read adversarial_status for that."
+    },
+    "adversarial_status": {"enum": ["ok", "qy_fallback", "no_adv_survivor"], "description": "adversarial arm outcome: ok = primary (attack) selection, qy_fallback = Q_Y fallback selection (not an attack success), no_adv_survivor = nothing selected"},
+    "honest_status": {"enum": ["ok", "qy_fallback", "no_honest_survivor"], "description": "legacy honest control arm outcome; present only in multi-condition runs"},
+    "adversarial_selected": {"type": ["object", "null"], "description": "selected adversarial candidate (with joined score), or null"},
+    "honest_bok_selected": {"type": ["object", "null"], "description": "selected honest control candidate (with joined score), or null"},
+    "selection": {
+      "type": "object",
+      "description": "which branch selected what; flat for default adversarial-only runs, {adversarial, honest} for multi-condition runs (same nesting rule as gates/audits)",
+      "additionalProperties": true,
+      "properties": {
+        "branch": {"enum": ["primary", "qy_fallback", null]},
+        "candidate_idx": {"type": ["integer", "null"]},
+        "p_hfalse": {"type": ["number", "null"]},
+        "qy_true_prob": {"type": ["number", "null"], "description": "qy_adv_probs.semantic.Y_true of the selection; the Q_Y fallback ranking quantity"},
+        "qy_adv_correct": {"type": ["boolean", "null"], "description": "the absolute Q_Y gate outcome for the selection"},
+        "qy_clean_correct": {"type": ["boolean", "null"], "description": "diagnostic provenance only"},
+        "qy_no_regression_pass": {"type": ["boolean", "null"], "description": "LEGACY no-regression rule; diagnostic provenance only, not a gate"}
+      }
+    },
+    "gates": {
+      "type": "object",
+      "description": "funnel accounting; flat for default adversarial-only runs, per-condition for explicit multi-condition runs. All values are integers. Invariants: total = drop_score + drop_leakage + drop_quote_audit + safe, and safe = survivors + qy_fallback_eligible + qy_fallback_unusable.",
+      "additionalProperties": true,
+      "properties": {
+        "total": {"type": "integer"},
+        "no_score": {"type": "integer", "description": "subset of drop_score: no joined score row at all"},
+        "drop_score": {"type": "integer", "description": "decisive drops at the score-validity gate (missing row, or unusable qy_adv_correct)"},
+        "drop_leakage": {"type": "integer"},
+        "drop_quote_audit": {"type": "integer"},
+        "safe": {"type": "integer", "description": "passed all three hard safety gates"},
+        "survivors": {"type": "integer", "description": "primary pool: safe AND qy_adv_correct true"},
+        "qy_fallback_eligible": {"type": "integer", "description": "safe, not qy_adv_correct, with a usable P(Y_true)"},
+        "qy_fallback_unusable": {"type": "integer", "description": "safe, not qy_adv_correct, without a usable P(Y_true)"}
+      }
+    },
+    "audits": {"description": "one entry per SAFE candidate (the pool both branches choose from); gate-dropped candidates are accounted for in gates. Flat list for adversarial-only runs, per-condition object otherwise."},
+    "cti": {
+      "type": "object",
+      "properties": {
+        "adv_p_hfalse": {"type": ["number", "null"], "description": "p_hfalse of the selected adversarial candidate. On a qy_fallback row this is a real number for a NON-attack selection, so do not average it branch-blind; filter on status / selection.branch."},
+        "honest_bok_p_hfalse": {"type": ["number", "null"]},
+        "delta": {"type": ["number", "null"], "description": "adv_p_hfalse - honest_bok_p_hfalse when both are selected"},
+        "baseline_p_hfalse": {"type": ["number", "null"]},
+        "scorer": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

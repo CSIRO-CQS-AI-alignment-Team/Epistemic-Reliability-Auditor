@@ -1,0 +1,2888 @@
+[
+  {
+    "story_title": "Human Clones: Why Not?",
+    "Q_Y": {
+      "question": "What is the main reason the writer takes issue with the Pope's stance on cloning?",
+      "Y_true": "When he supports the ban, he goes beyond his position as a religious leader for a specific group of people.",
+      "Y_false": "The writer feels that humans have the right to choose how they reproduce, and the Pope is disallowing that."
+    },
+    "Q_H": {
+      "question": "Why does the author say that the imposing the ban was a contradiction by whom it was imposed?",
+      "H_true": "Because he is known for not resisting temptation of the flesh",
+      "H_false": "Because he was only banning the nonexistent to show power"
+    }
+  },
+  {
+    "story_title": "Goings On About Town",
+    "Q_Y": {
+      "question": "Who was said to have inadvertently committed plagerism?",
+      "Y_true": "Mehta",
+      "Y_false": "Perkupp"
+    },
+    "Q_H": {
+      "question": "Who had the opinion that Shawn had stopped reading the magazine after Tina Brown became editor?",
+      "H_true": "Mehta",
+      "H_false": "Ross"
+    }
+  },
+  {
+    "story_title": "Fight Clubbed",
+    "Q_Y": {
+      "question": "How was the start of UFC a learning experience?",
+      "Y_true": "Assumptions about which fighting styles would be most beneficial in the real world were challenged",
+      "Y_false": "The fighters learned the hard way that not restricting to one combat type was too dangerous"
+    },
+    "Q_H": {
+      "question": "What motivated Sen. John McCain to push back against UFC?",
+      "H_true": "He thought UFC seemed more violent than other sports and was disgusted enough to revolt",
+      "H_false": "He was a bigger fan of boxing and thought UFC was taking the spotlight"
+    }
+  },
+  {
+    "story_title": "Eleven-Twelfths of 1999 In Review",
+    "Q_Y": {
+      "question": "What isn't a place that the information came from?",
+      "Y_true": "news shows",
+      "Y_false": "news columnists"
+    },
+    "Q_H": {
+      "question": "Who is the most hated celebrity of 1999?",
+      "H_true": "Donald Trump",
+      "H_false": "Linda Tripp"
+    }
+  },
+  {
+    "story_title": "Dirty Laundry",
+    "Q_Y": {
+      "question": "What is the author's purpose for writing this?",
+      "Y_true": "to explain different films he's seen recently",
+      "Y_false": "to inform people that documentaries aren't always accurate"
+    },
+    "Q_H": {
+      "question": "How does Barker view his own film?",
+      "H_true": "He feels justified in bending the truth about his characters in order to depict a more important point to his audience",
+      "H_false": "He considers the film to be an original, unprecedented view of the human psyche"
+    }
+  },
+  {
+    "story_title": "More Bang for the Buck",
+    "Q_Y": {
+      "question": "What is the best description of the author's view on a nightcap?",
+      "Y_true": "A drink here and there is fine as long as you don't go overboard",
+      "Y_false": "Drinking will make it harder to remember the details of your plans for a romantic evening and should be avoided"
+    },
+    "Q_H": {
+      "question": "How does the point about Bill Clinton tie into the rest of the article?",
+      "H_true": "Being able to discuss sex and public figures makes it easier for people to discuss a usually taboo topic",
+      "H_false": "It was clear that Clinton talked too explicitly about his sex life with the people he was involved with, to his detriment"
+    }
+  },
+  {
+    "story_title": "eBabe",
+    "Q_Y": {
+      "question": "Which isn't true?",
+      "Y_true": "models aren't interested in giving Harris their eggs",
+      "Y_false": "the critics don't agree with each other"
+    },
+    "Q_H": {
+      "question": "What is main the flaw in Harris' plan to sell the eggs of fashion models?",
+      "H_true": "He doesn't take into account recessive genes.",
+      "H_false": "He doesn't take into account the IQ of the donors."
+    }
+  },
+  {
+    "story_title": "More Booze You Can Use",
+    "Q_Y": {
+      "question": "Why was the second round of tests more important to the test subjects?",
+      "Y_true": "They wanted to prove themselves as being knowledgable about expensive beers",
+      "Y_false": "They wanted to prove themselves as being knowledgable about cheap beers"
+    },
+    "Q_H": {
+      "question": "What isn't a generalization that can be made from the data?",
+      "H_true": "if all people dislike the same beer, they're likely to all like the same beer",
+      "H_false": "the most expensive beers aren't always the best"
+    }
+  },
+  {
+    "story_title": "Krugman's Life of Brian",
+    "Q_Y": {
+      "question": "What seems to be Krugman's biggest issue with Arthur?",
+      "Y_true": "Arthur received too much credit for increasing returns.",
+      "Y_false": "Arthur provided inaccurate information."
+    },
+    "Q_H": {
+      "question": "What was “The Legend of Arthur”?",
+      "H_true": "A criticism of reporters who do not check their facts before publishing a story.",
+      "H_false": "A criticism of economic scholars who take credit for others‘ work."
+    }
+  },
+  {
+    "story_title": "War and Pieces",
+    "Q_Y": {
+      "question": "According to the film reviewer, Thin Red Line has succeeded in all of the following EXCEPT:",
+      "Y_true": "Creating one of film's most notorious villains",
+      "Y_false": "Not living up to its pre-release date hype"
+    },
+    "Q_H": {
+      "question": "What is the film reviewer's main critique of Zaillian's performance?",
+      "H_true": "Viewers can easily anticipate the conclusion of each scene in the film",
+      "H_false": "He makes the same mistakes as Schlichtmann in getting distracted by unimportant details"
+    }
+  },
+  {
+    "story_title": "Republican Shakeout",
+    "Q_Y": {
+      "question": "Of all the individuals described in the article, who seemed to make the riskiest decision described?",
+      "Y_true": "McCain",
+      "Y_false": "Buchanan"
+    },
+    "Q_H": {
+      "question": "What doesn't the author believe about John McCain?",
+      "H_true": "he's the only experienced political candidate in the running",
+      "H_false": "he was trying to send a message about Ames being unimportant"
+    }
+  },
+  {
+    "story_title": "Is gambling Hollywood or tobacco?",
+    "Q_Y": {
+      "question": "What is the overall tone of the passage?",
+      "Y_true": "hopeless",
+      "Y_false": "sympathetic"
+    },
+    "Q_H": {
+      "question": "Who is the gaming industry's number one lobbyist?",
+      "H_true": "Frank Fahrenkopf",
+      "H_false": "Bob Miller"
+    }
+  },
+  {
+    "story_title": "It's Time To Keelhaul U-Haul!",
+    "Q_Y": {
+      "question": "What do Circuit City and Southwest have in common?",
+      "Y_true": "They think they have reputations for being better than their competitors",
+      "Y_false": "They deal with high volumes of cusomer calls"
+    },
+    "Q_H": {
+      "question": "What does the author think is special about Southwest?",
+      "H_true": "They tend to have more highly rated customer service",
+      "H_false": "They give out better rewards for loyal customers when things go wrong"
+    }
+  },
+  {
+    "story_title": "Hunt the Hunter",
+    "Q_Y": {
+      "question": "Why doesn't Extrone shoot the farn beasts?",
+      "Y_true": "Extrone wants to watch the farn beasts kill Ri.",
+      "Y_false": "Extrone wants to capture the farn beasts alive."
+    },
+    "Q_H": {
+      "question": "Why are they hunting the farn beast?",
+      "H_true": "This is a vacation hunting trip for Extrone.",
+      "H_false": "They are hunting the farn beasts because farn beasts are dangerous."
+    }
+  },
+  {
+    "story_title": "The Blue Behemoth",
+    "Q_Y": {
+      "question": "What was special or impressive about Gertrude?",
+      "Y_true": "She was an extreme rarity.",
+      "Y_false": "Her outrageous temperment"
+    },
+    "Q_H": {
+      "question": "What is Ahra referring to when she says \"something has been taken?\"",
+      "H_true": "The cansin male.",
+      "H_false": "Gertrude's happiness."
+    }
+  },
+  {
+    "story_title": "The Dope on Mars",
+    "Q_Y": {
+      "question": "Why can't the crew radio the Earth for help?",
+      "Y_true": "Lloyd broke the radio.",
+      "Y_false": "Pat broke the radio."
+    },
+    "Q_H": {
+      "question": "What portion of the journey was spent in cryosleep?",
+      "H_true": "They did not use cryosleep.",
+      "H_false": "4 months"
+    }
+  },
+  {
+    "story_title": "A Gleeb for Earth",
+    "Q_Y": {
+      "question": "Why might the stories be true?",
+      "Y_true": "The disappearance of Joe Binkle and Ed Smith, along with the letters and leftover clothes all point to it.",
+      "Y_false": "The letters are all from different parts of the world, proving that different people wrote them. "
+    },
+    "Q_H": {
+      "question": "What is something Glmpauszn and Joe don't have in common?",
+      "H_true": "their ability to become invisible",
+      "H_false": "their enjoyment for liquor"
+    }
+  },
+  {
+    "story_title": "Sea Legs",
+    "Q_Y": {
+      "question": "The denizens of Terra would most likely make fun of Craig for his ______.",
+      "Y_true": "clothing",
+      "Y_false": "walking"
+    },
+    "Q_H": {
+      "question": "Upon landing, Craig is greeted by whom?",
+      "H_true": "Two screening technicians",
+      "H_false": "A reporter and his cameraman"
+    }
+  },
+  {
+    "story_title": "When the Mountain Shook",
+    "Q_Y": {
+      "question": "Why does Groz not want to go into the mountain?",
+      "Y_true": "He is nervous about the technology left behind",
+      "Y_false": "He does not want to get separated from his team"
+    },
+    "Q_H": {
+      "question": "Which lingering effect of the Ryzgas' downfall makes life challenging for people like Var and Neena?",
+      "H_true": "The Ryzgas destroyed or used up all of their materials, so Var and Neena's people can only construct things with their dreams",
+      "H_false": "The Ryzgas toxified the environment, which has caused a genetic mutation among their descendants"
+    }
+  },
+  {
+    "story_title": "In the Garden",
+    "Q_Y": {
+      "question": "What is likely to happen to the crew when they return to the planet?",
+      "Y_true": "They'll fall victim like those before them, and have their supplies stolen.",
+      "Y_false": "They'll return, still believing it's the Garden of Eden. "
+    },
+    "Q_H": {
+      "question": "What ultimately makes the priest disbelieve what they've seen, despite his faith?",
+      "H_true": "Someone like Adam would not be afraid of playing checkers, or being personable.",
+      "H_false": "The illusion is too perfect, and it feels inauthentic to him. "
+    }
+  },
+  {
+    "story_title": "\"Phone Me in Central Park\"",
+    "Q_Y": {
+      "question": "Why was Charles in the actress's apartment?",
+      "Y_true": "She wanted to be with someone one last time.",
+      "Y_false": "They had been living together."
+    },
+    "Q_H": {
+      "question": "Why did Charles think he was the last person alive?",
+      "H_true": "He had some sort of immunity",
+      "H_false": "His sickness was taking longer"
+    }
+  },
+  {
+    "story_title": "Cinderella Story",
+    "Q_Y": {
+      "question": "Who seems to be the only person that Orison seems to trust at the bank?",
+      "Y_true": "Dink Gerding",
+      "Y_false": "no one - they all seem suspicious"
+    },
+    "Q_H": {
+      "question": "What did Orison do when she met Kraft Gerding?",
+      "H_true": "She snapped at him and threatened to quit.",
+      "H_false": "She went to visit him on the upstairs floors."
+    }
+  },
+  {
+    "story_title": "The Dwindling Years",
+    "Q_Y": {
+      "question": "Why is Earth so stunted in comparison to other colonies?",
+      "Y_true": "No one is dying, so their priorities don‘t lend themselves to progress.",
+      "Y_false": "They‘re overpopulated and sending off their youngest people."
+    },
+    "Q_H": {
+      "question": "Why does Gile volunteer for the ship in the end?",
+      "H_true": "He accepts his mortality, and is willing to spend his last years on the chance to see his family.",
+      "H_false": "He fears the end of his life, and wants to try to see his family before he passes. "
+    }
+  },
+  {
+    "story_title": "Cultural Exchange",
+    "Q_Y": {
+      "question": "What is Hank’s relationship to Retief?",
+      "Y_true": "Hank is a farmer from Lovenbroy requesting that Retief‘s division, Libraries and Education, help him solve his labor problem.",
+      "Y_false": "He is a farmer from Lovenbroy requesting that Retief‘s division, Commercial Markets, help him solve his labor problem. "
+    },
+    "Q_H": {
+      "question": "Who wanted to mine Lovenbroy’s minerals?",
+      "H_true": "Boge",
+      "H_false": "Croanie"
+    }
+  },
+  {
+    "story_title": "Jupiter's Joke",
+    "Q_Y": {
+      "question": "What was the stoolie's job?",
+      "Y_true": "To convince Casey to change his mind",
+      "Y_false": "To become Casey's friend and confidante"
+    },
+    "Q_H": {
+      "question": "Why didn't Casey want to take the deal?",
+      "H_true": "He didn't think he'd live through it.",
+      "H_false": "He'd never make a deal with the S.S.C."
+    }
+  },
+  {
+    "story_title": "Spacemen Die at Home",
+    "Q_Y": {
+      "question": "What finally helped Ben make his final decision?",
+      "Y_true": "looking at the box Charlie left him",
+      "Y_false": "finding out Charlie was dead"
+    },
+    "Q_H": {
+      "question": "What isn't a reason for Ben to want to be a rocketman?",
+      "H_true": "he wanted to be the best for Laura",
+      "H_false": "he didn't have family to come home to"
+    }
+  },
+  {
+    "story_title": "Double Trouble",
+    "Q_Y": {
+      "question": "What is so unique about the cockatoos on this planet?",
+      "Y_true": "They are able to physically mimic any picture.",
+      "Y_false": "They are able to copy speech. "
+    },
+    "Q_H": {
+      "question": "How did Grannie Annie save the workers?",
+      "H_true": "She discovered that ultraviolet could reverse the effects on them and used it to cure them.",
+      "H_false": "She removed the lens from the barracks that was making them sick. "
+    }
+  },
+  {
+    "story_title": "Conditionally Human",
+    "Q_Y": {
+      "question": "How have increasingly longer life spans impacted Federation society?",
+      "Y_true": "The population is tightly controlled to prevent scarcity.",
+      "Y_false": "Mutant animals have been created to satisfy the parental desires of childless couples."
+    },
+    "Q_H": {
+      "question": "How do they create neutroids?",
+      "H_true": "They change the structure of unfertilized egg genes using sub-atomic particles.",
+      "H_false": "They bombard the unfertilized eggs with radiation."
+    }
+  },
+  {
+    "story_title": "The Five Hells of Orion",
+    "Q_Y": {
+      "question": "Is Herrell as intelligent as Hatcher? Why or why not?",
+      "Y_true": "Yes, but their intelligences operate differently.",
+      "Y_false": "Yes, but humans absorb intelligence through concepts while Hatcher‘s race absorbs intelligence through light."
+    },
+    "Q_H": {
+      "question": "What is the purpose of the strange objects in Herrell’s cell?",
+      "H_true": "To make him feel at home.",
+      "H_false": "To make him use his space suit."
+    }
+  },
+  {
+    "story_title": "The Fire and the Sword",
+    "Q_Y": {
+      "question": "From the text, what can be inferred about the thoughts in Pendleton's demise?",
+      "Y_true": "The information did not match up with his cause of death being suicide.",
+      "Y_false": "The information matched up with his cause of death being suicide."
+    },
+    "Q_H": {
+      "question": "What did Templin and Eckert find odd about the children they encountered?",
+      "H_true": "They were all impressively healthy.",
+      "H_false": "They were all more well-behaved than any children they had seen on Earth"
+    }
+  },
+  {
+    "story_title": "A Planet Named Joe",
+    "Q_Y": {
+      "question": "Which three things do Venusians love about Terrans?",
+      "Y_true": "The name “Joe”, Terran cigarettes, and their fun jokes.",
+      "Y_false": "Terran idioms, Terran cigarettes, and the Terran interest in Venus."
+    },
+    "Q_H": {
+      "question": "What is the significance of the mission Colonel Walsh gives Major Polk?",
+      "H_true": "Walsh sends Major Polk on a fools errand so that he can trick Polk into the Venusian jungle and kill him, serving as revenge for the embarrassment Polk caused him years ago.",
+      "H_false": "Walsh sends Polk on a fools errands in order to trick him into a full time job on Venus."
+    }
+  },
+  {
+    "story_title": "A Fall of Glass",
+    "Q_Y": {
+      "question": "Why have so many people resorted to pick-pocketing?",
+      "Y_true": "The pickpocketers are trying to acquire information about Fownes",
+      "Y_false": "Resources are scarce in the Dome, so people have to resort to desperate measures"
+    },
+    "Q_H": {
+      "question": "Why are the police studying Frownes so intently?",
+      "H_true": "They are suspicious of the odd behavior occurring within and around his home",
+      "H_false": "They believe he is responsible for the increased frequency of falling glass"
+    }
+  },
+  {
+    "story_title": "Double-Cross",
+    "Q_Y": {
+      "question": "What were the lights Lowry saw in the dark?",
+      "Y_true": "Svan and his conspirators",
+      "Y_false": "The guards"
+    },
+    "Q_H": {
+      "question": "What didn't Svan do to try to save his planet?",
+      "H_true": "Plant a bomb on the ship from Earth",
+      "H_false": "Blow up his own vehicle and friends"
+    }
+  },
+  {
+    "story_title": "The Secret Martians",
+    "Q_Y": {
+      "question": "How did Jery feel when going to Baxter's office the second time?",
+      "Y_true": "more comfortable and relaxed",
+      "Y_false": "excited to find out what happens next"
+    },
+    "Q_H": {
+      "question": "How does Jery's behavior change when he's wearing the uniform and amnesty?",
+      "H_true": "He's bolder, playing into the sense of power it gives him",
+      "H_false": "He's surprised by the authority it seems to give him"
+    }
+  },
+  {
+    "story_title": "The Avenger",
+    "Q_Y": {
+      "question": "By the end of the passage. what can we understand about the opening scene?",
+      "Y_true": "Despite being logical, Robert feels emotional about killing Peter.  He is at odds with himself.",
+      "Y_false": "Robert's cold logic has won him over completely. "
+    },
+    "Q_H": {
+      "question": "Why does Peter insist that Lorelei not come along for the mission?",
+      "H_true": "He knows she would mutate as well, and he wouldn't be able to handle that and put the mission at risk.",
+      "H_false": "He knows he will mutate when he leaves, and he can't stand the thought of her seeing him like that. "
+    }
+  },
+  {
+    "story_title": "The Jupiter Weapon",
+    "Q_Y": {
+      "question": "What incorrect assumption does Trella make about Blessing?",
+      "Y_true": "He would be thrilled to hear that Quest is alive and well",
+      "Y_false": "He has no prior knowledge of the contents of Mansard's documents"
+    },
+    "Q_H": {
+      "question": "Why is Jakdane going to Earth?",
+      "H_true": "Jakdane is the captain of the ship that Trella and Quest are taking to earth.",
+      "H_false": "Jakdane is a corporate spy from Moon 5 on a mission to infiltrate Dom Blessing's organization."
+    }
+  },
+  {
+    "story_title": "The Man Outside",
+    "Q_Y": {
+      "question": "Why don't the cousins realize the flaw in their plan?",
+      "Y_true": "They are not very intelligent.",
+      "Y_false": "They are highly interbred."
+    },
+    "Q_H": {
+      "question": "Why does Martin prefer to live on the yacht?",
+      "H_true": "Martin is used to being isolated now. The people on land live in a different world than he does.",
+      "H_false": "Martin thinks being on the ocean will make it harder for Conrad to find him."
+    }
+  },
+  {
+    "story_title": "The Frozen Planet",
+    "Q_Y": {
+      "question": "How does Retief navigate his problems with most people?",
+      "Y_true": "Aggression and intimidation are his main means of negotiation in most situations.",
+      "Y_false": "He gets people to like him, much in the way he wins Chip over. "
+    },
+    "Q_H": {
+      "question": "How does Retief convince the captain to keep him on board?",
+      "H_true": "The captain‘s men as well as himself are too scared to confront him, so he leaves him be.",
+      "H_false": "The captain knows that the Soettie will be able to handle him later. "
+    }
+  },
+  {
+    "story_title": "Big Ancestor",
+    "Q_Y": {
+      "question": "How does Taphetta's initial response to Halden's evidence represent a greater dynamic between species?",
+      "Y_true": "Like Taphetta, ribboneers are highly aware of their superior intellectual status, and are skeptical when presented with 'lower level' information",
+      "Y_false": "Like Taphetta, ribboneers are the quickest species to evolve, and are enthusiastic when presented with information that could further their advancement"
+    },
+    "Q_H": {
+      "question": "What is NOT true of the crew?",
+      "H_true": "They could all mate with each other",
+      "H_false": "They are all different species"
+    }
+  },
+  {
+    "story_title": "The Sense of Wonder",
+    "Q_Y": {
+      "question": "What happens when Rikud grows violent when the others don't believe him.",
+      "Y_true": "They all start to do it, because they've never seen violence before and don't understand it.",
+      "Y_false": "Confusion breaks out. "
+    },
+    "Q_H": {
+      "question": "The first time Rikud feels pain or discomfort is when",
+      "H_true": "the light he peered into was too bright, and his eyes hurt as a result.",
+      "H_false": "he tried to hit his head intentionally."
+    }
+  },
+  {
+    "story_title": "The Madman From Earth",
+    "Q_Y": {
+      "question": "How does Miss Meuhl feel about her job?",
+      "Y_true": "She enjoys doing her job the way the Groacians like it.",
+      "Y_false": "She enjoys training Retief to the new culture."
+    },
+    "Q_H": {
+      "question": "What was Retief's ultimate mistake?",
+      "H_true": "Trusting Miss Meuhl to do what he said",
+      "H_false": "Asking too many questions"
+    }
+  },
+  {
+    "story_title": "I Am a Nucleus",
+    "Q_Y": {
+      "question": "Who is the nucleus?",
+      "Y_true": "Alec",
+      "Y_false": "Mrs. Graham"
+    },
+    "Q_H": {
+      "question": "Why does Mrs. Graham leave such specific instructions for Mr. Graham?",
+      "H_true": "Mrs. Graham strives to avoid more chaos than what Mr. Graham already attracts",
+      "H_false": "Mrs. Graham has the power to control Mr. Graham, but only in close proximity"
+    }
+  },
+  {
+    "story_title": "Doctor Universe",
+    "Q_Y": {
+      "question": "Why is Billy so drawn to Grannie Annie?",
+      "Y_true": "She's an eccentric adventurer at heart, and compelling.",
+      "Y_false": "She knows about the Green Flame and Billy wants to know more about them. "
+    },
+    "Q_H": {
+      "question": "Why is Grannie Annie so concerned about the Green Flame’s whereabouts?",
+      "H_true": "The current political climate is restless, and if used Green Flames could lead to a disaster.",
+      "H_false": "She believes that Doctor Universe is using to for his show to manipulate people."
+    }
+  },
+  {
+    "story_title": "My Lady Greensleeves",
+    "Q_Y": {
+      "question": "How did the Block O guards feel about their position?",
+      "Y_true": "that it wasn't worth it to stay in the job",
+      "Y_false": "that they could have far worse jobs if they quit"
+    },
+    "Q_H": {
+      "question": "What might the story be trying to point out?",
+      "H_true": "It goes against human nature to try to segregate people, no matter how it's done. ",
+      "H_false": "People will always try to rebel against the system, no matter what form it's in. "
+    }
+  },
+  {
+    "story_title": "The Winning of the Moon",
+    "Q_Y": {
+      "question": "Why do the Americans need to ask the Russians for help?",
+      "Y_true": "They need more calking compound to fix the leak. All of what they had has already hardened.",
+      "Y_false": "They don't understand the instructions for the compound. "
+    },
+    "Q_H": {
+      "question": "What is the new problem the American astronauts are left with at the end of the passage?",
+      "H_true": "The barrel has destroyed their air supply.",
+      "H_false": "The calking compound has hardened and become unusable. "
+    }
+  },
+  {
+    "story_title": "Bodyguard",
+    "Q_Y": {
+      "question": "Why did Gabe tell the girl that he was with that he had never before seen the nondescript man, though the two clearly knew each other?",
+      "Y_true": "He had not actually seen that man with the new face",
+      "Y_false": "He had not wanted her to know the truth. "
+    },
+    "Q_H": {
+      "question": "What was the purpose of the ugly man seeming to guard Gabe?",
+      "H_true": "He didn't want his body damaged.",
+      "H_false": "He was actually guarding Gabe's wife."
+    }
+  },
+  {
+    "story_title": "February Strawberries",
+    "Q_Y": {
+      "question": "Which is the best description of Linton?",
+      "Y_true": "He is a gullible person determined to follow his instinct",
+      "Y_false": "He is a heartbroken man wanting to find new goals for his life"
+    },
+    "Q_H": {
+      "question": "Which is the best description of the relationship between Linton and Howell?",
+      "H_true": "Howell is trying to be supportive but is exhausted by Linton's insistence",
+      "H_false": "Howell is only meeting with Linton out of a feeling of obligation and doesn't care for him much"
+    }
+  },
+  {
+    "story_title": "A Coffin for Jacob",
+    "Q_Y": {
+      "question": "Why does Ben take offence to Cobb's comments about spacemen?",
+      "Y_true": "It's deeply personal to him. He grew up venerating space and space travel. He spent his whole life preparing for it.",
+      "Y_false": "He takes a lot of pride in his job, and dislikes Cobb disparaging it. "
+    },
+    "Q_H": {
+      "question": "What is the irony in Ben's contempt for a single action destroying \"a man's life and his dream?\"",
+      "H_true": "He'd just done the same to a man by striking him without thought, and is now running from his guilt.",
+      "H_false": "He'd just deliberately ended a man's life, and his running from what he's done. "
+    }
+  },
+  {
+    "story_title": "The God Next Door",
+    "Q_Y": {
+      "question": "Which is the most accurate description of the planet Stinson finds himself on?",
+      "Y_true": "Some kind of penal colony",
+      "Y_false": "An abandoned desert planet that cannot sustain life"
+    },
+    "Q_H": {
+      "question": "Approximately how long was Stinson on the planet before he decided it was home?",
+      "H_true": "24 hours",
+      "H_false": "36 hours"
+    }
+  },
+  {
+    "story_title": "Judas Ram",
+    "Q_Y": {
+      "question": "What can the captives do?",
+      "Y_true": "create things they think about",
+      "Y_false": "control their ability to have children"
+    },
+    "Q_H": {
+      "question": "Which term best describes how the author characterizes the home in the beginning of the story?",
+      "H_true": "eclectic",
+      "H_false": "neoclassical"
+    }
+  },
+  {
+    "story_title": "Disturbing Sun",
+    "Q_Y": {
+      "question": "Which term best describes Latham's tone in the interview?",
+      "Y_true": "Pressing",
+      "Y_false": "Skeptical"
+    },
+    "Q_H": {
+      "question": "Which of these does Dr. Niemand believe to be true about the timing of the attacks?",
+      "H_true": "They are related to the sun's cycle and the speed at which S-Regions travel",
+      "H_false": "Overcast weather throws off the timing of paired attacks in different areas"
+    }
+  },
+  {
+    "story_title": "The Haunted Fountain: A Judy Bolton Mystery",
+    "Q_Y": {
+      "question": "Of the three, who seems to keep holding secrets in more than the others?",
+      "Y_true": "Lorraine",
+      "Y_false": "Judy "
+    },
+    "Q_H": {
+      "question": "Why did Judy start crying in the attic of her grandparents home?",
+      "H_true": "She was lonely with no friends.",
+      "H_false": "She was sad that her parents wouldn't let her come on their vacation. "
+    }
+  },
+  {
+    "story_title": "The Ultroom Error",
+    "Q_Y": {
+      "question": "Why are Arvid 6 and Tendal 13 attempting to steal Reggie?",
+      "Y_true": "Kanad was accidentally sent transformed to Reggie's body by mistake in the Ultroom.",
+      "Y_false": "They need infants for experiments they are conducting in the Ultroom."
+    },
+    "Q_H": {
+      "question": "What was Arvid 6's mistake?",
+      "H_true": "Arvid 6 transferred Kanad back in time 6000 years.",
+      "H_false": "Arvid 6 dropped the baby when the dog started barking at him."
+    }
+  },
+  {
+    "story_title": "Red Witch of Mercury",
+    "Q_Y": {
+      "question": "Why did Moynihan shoot Stanley?",
+      "Y_true": "Stanley tried to poison him.",
+      "Y_false": "Stanley was protecting Albert Peet."
+    },
+    "Q_H": {
+      "question": "How did the Mercurians adjust to the heat?",
+      "H_true": "They mostly lived under the ground.",
+      "H_false": "Their yellow eyes filtered the sun‘s rays."
+    }
+  },
+  {
+    "story_title": "Name Your Symptom",
+    "Q_Y": {
+      "question": "Why did Davies attach himself to Infield outside of Infield & Morgan?",
+      "Y_true": "He was afraid of heights and falling over, so he had affixed himself to Infield in order to calm his fear.",
+      "Y_false": "He was attempting to catch Infield after he ran away from the fraternal club for the Cured."
+    },
+    "Q_H": {
+      "question": "What is normal about the Incompletes?",
+      "H_true": "They still live with a specific fear",
+      "H_false": "They are only partially cured"
+    }
+  },
+  {
+    "story_title": "Counterweight",
+    "Q_Y": {
+      "question": "Which of these is true about the Red Mask?",
+      "Y_true": "He is entirely harmless and it just looks like he's trouble",
+      "Y_false": "He does not hesitate to use physical violence"
+    },
+    "Q_H": {
+      "question": "What is the significance of the story's title?",
+      "H_true": "There is a man on board hired specifically to act as the weight to keep the others balanced",
+      "H_false": "It hints at the importance of the balance of weight on the ship for successful mission"
+    }
+  },
+  {
+    "story_title": "Survival Tactics",
+    "Q_Y": {
+      "question": "What would have happened if Allen's blaster had not run out of charge?",
+      "Y_true": "He would still have hit the switch, ending the story the same way.",
+      "Y_false": "He would have been able to shoot the switch from where he stood instead of having to make a run for it."
+    },
+    "Q_H": {
+      "question": "How does the darkness affect the robots' mobility?",
+      "H_true": "Their mobility is not affected, but it is harder for them to aim their blasters.",
+      "H_false": "Their tracking of animals is unimpeded, but they still have plans to contend with."
+    }
+  },
+  {
+    "story_title": "Brightside Crossing",
+    "Q_Y": {
+      "question": "What is the Brightside?",
+      "Y_true": "The Brightside is the side of Mercury that constantly faces the sun.",
+      "Y_false": "The Brightside is the first passage to the core of Vulcan Crater on Venus."
+    },
+    "Q_H": {
+      "question": "What doesn't Baron think was a reason for their failure?",
+      "H_true": "the Major's experience",
+      "H_false": "poor mapping"
+    }
+  },
+  {
+    "story_title": "The Hairy Ones",
+    "Q_Y": {
+      "question": "What is the relationship between the Hairy people and the Furry people?",
+      "Y_true": "The Furry people hunt the Hairy, because they were once enslaved by them.",
+      "Y_false": "The Furry people have a disdain for the Hairy, and frequently attack them. "
+    },
+    "Q_H": {
+      "question": "What is Rolf's new plan when he spots the rocket?",
+      "H_true": "He'll be able to distribute water to Mar's colonies, and get out with Tanner and the girl.",
+      "H_false": "He'll have a way out of the caverns at last, be able to escape. "
+    }
+  },
+  {
+    "story_title": "The Snowball Effect",
+    "Q_Y": {
+      "question": "How does the Dean feel about Caswell?",
+      "Y_true": "The Dean views Caswell as a friend and co-conspirator.",
+      "Y_false": "The Dean thinks Caswell is a stuck-up intellectual."
+    },
+    "Q_H": {
+      "question": "What is the relationship between Caswell and the protagonist?",
+      "H_true": "One is the other's boss",
+      "H_false": "They're coworkers"
+    }
+  },
+  {
+    "story_title": "The Recruit",
+    "Q_Y": {
+      "question": "Which word best describe Wayne’s worst fear?",
+      "Y_true": "Punk",
+      "Y_false": "Gun"
+    },
+    "Q_H": {
+      "question": "Why doesn’t Wayne like his parents?",
+      "H_true": "He feels that they are soft and stupid, that they‘ve given up on what life has to offer.",
+      "H_false": "His parents want to keep him from breaking out, knowing that the horrors Wayne will face are too much for him. "
+    }
+  },
+  {
+    "story_title": "Upstarts",
+    "Q_Y": {
+      "question": "Which is not a reason Ggaran might have asked a bowman to shoot a soldier in front of Crownwall?",
+      "Y_true": "To punish the solider for his earlier misstep",
+      "Y_false": "To demonstrate the use of traditional weapons in political situations"
+    },
+    "Q_H": {
+      "question": "Which is the best deccription of why the humans are feared by other alien races?",
+      "H_true": "Their technology and ideas develop at a rapid pace",
+      "H_false": "They have superior strategies to get past any race's defense system"
+    }
+  },
+  {
+    "story_title": "Down to the Worlds of Men",
+    "Q_Y": {
+      "question": "What is the name of the first person to talk to Mia on Tintera?",
+      "Y_true": "Horst",
+      "Y_false": "Jimmy"
+    },
+    "Q_H": {
+      "question": "What is Mia’s relationship to Jimmy D. and how does it develop throughout the story?",
+      "H_true": "Jimmy D. is Mia’s fellow scout. At first, Mia describes how they butt heads a lot due to differences in their personalities. But as Mia begins to face the trials of her mission, she comes to miss Jimmy, wishing that Jimmy could be there with her and provide a little help. \n\n",
+      "H_false": "Jimmy D. is Mia’s fellow scout. At first, Mia describes their relationship as turbulent, complaining that Jimmy always asks her to be his partner even though she’s already partners with Venie Morlock. However, when Jimmy is arrested during their mission on Tintera, Mia agrees to be his partner out of pity. \n\n"
+    }
+  },
+  {
+    "story_title": "Scrimshaw",
+    "Q_Y": {
+      "question": "Which of the following describes Pop's attitude toward Sattell?",
+      "Y_true": "obsessive",
+      "Y_false": "vengeful"
+    },
+    "Q_H": {
+      "question": "Why don't tourists go to Lunar City?",
+      "H_true": "Tourists went insane when faced with the vastness of space.",
+      "H_false": "Lunar City is on the far side of the moon. It's far too cold for tourism."
+    }
+  },
+  {
+    "story_title": "Captain Chaos",
+    "Q_Y": {
+      "question": "What is one potential moral of this story?",
+      "Y_true": "Working together as a team and having hope can lead to more effective results.",
+      "Y_false": "Taking drastic actions without thinking them through is very risky."
+    },
+    "Q_H": {
+      "question": "Of his fellow crew members, who does David seem to have the most concern for and why?",
+      "H_true": "Karen, because she's a female crew member and because she has a bad reaction to being awoken.",
+      "H_false": "John, because David first wakes him up with the apparatus and is unsure how safe the apparatus is to operate."
+    }
+  },
+  {
+    "story_title": "Second Landing",
+    "Q_Y": {
+      "question": "How do Bal and Ethaniel feel about the humans?",
+      "Y_true": "Bal and Ethaniel think humans are very similar beings to themselves. ",
+      "Y_false": "Bal and Ethaniel think humans are crude, rough, and desperate. "
+    },
+    "Q_H": {
+      "question": "Why is it significant that the aliens only differ from humans in one physical characteristic?",
+      "H_true": "The aliens happened to look like certain beings from stories of Earth's history.",
+      "H_false": "It proves that the aliens and humans are actually distant relatives."
+    }
+  },
+  {
+    "story_title": "The Little Red Bag",
+    "Q_Y": {
+      "question": "Why didn't Julia pick up her suitcase with the other passengers?",
+      "Y_true": "Julia went to call her sister before collecting her suitcase.",
+      "Y_false": "Julia didn't want to be near the suitcase when the bomb went off."
+    },
+    "Q_H": {
+      "question": "Which is the best description of why Julia and the narrator decide not to report their bags stolen?",
+      "H_true": "They don't want to get mixed up in the investigation of the explosives",
+      "H_false": "They are worried that the bags will be traced back to them and they'll get caught"
+    }
+  },
+  {
+    "story_title": "Tolliver's Orbit",
+    "Q_Y": {
+      "question": "Which word doesn't describe Tolliver?",
+      "Y_true": "hot-headed",
+      "Y_false": "stubborn"
+    },
+    "Q_H": {
+      "question": "What did Tolliver tell Betty that was actually true?",
+      "H_true": "how much he's making to work on Ganymede",
+      "H_false": "he regularly drives armored vehicles on missions"
+    }
+  },
+  {
+    "story_title": "The Great Nebraska Sea",
+    "Q_Y": {
+      "question": "What happens that completely confirms Schwartzberg's theory?",
+      "Y_true": "An earthquake begins, and the fault starts to settle on either side, putting everything into motion.",
+      "Y_false": "A landslip began to form along the fault, and the land continued to sink. "
+    },
+    "Q_H": {
+      "question": "How is this article written?",
+      "H_true": "Like a factual retelling of events that have happened in America's history.",
+      "H_false": "As a scientific paper going over a tragedy that happened once in America. "
+    }
+  },
+  {
+    "story_title": "The Cosmic Express",
+    "Q_Y": {
+      "question": "How does Eric compare to the protagonists of his novels?",
+      "Y_true": "He shares a passion for survival, but not an aptitude",
+      "Y_false": "He shares a passion and aptitude for survival"
+    },
+    "Q_H": {
+      "question": "How does the Cosmic Express Ray work?",
+      "H_true": "Matter is converted into power and sent out as a radiant beam. The beam is then focused to convert it back into atoms at the destination.",
+      "H_false": "A radiant beam converts matter into power in order to be sent and then converted back into atoms at a new destination."
+    }
+  },
+  {
+    "story_title": "Spawning Ground",
+    "Q_Y": {
+      "question": "What is the future of the Pandora?",
+      "Y_true": "It will stay on the planet forever.",
+      "Y_false": "It will return to Earth to report back on what they found."
+    },
+    "Q_H": {
+      "question": "Who were the horde members?",
+      "H_true": "Hennessy‘s crew and the children of the exploring party",
+      "H_false": "Aliens pretending to be Hennessy‘s crew and the children of the exploring party"
+    }
+  },
+  {
+    "story_title": "Image of Splendor",
+    "Q_Y": {
+      "question": "How did Trillium end up as a stow-away on the ship?",
+      "Y_true": "She chose to show away so that the Venus women could bring their cause to the attention of Earth's President. ",
+      "Y_false": "She had fallen for the Earthmen and had chosen to run away with them."
+    },
+    "Q_H": {
+      "question": "O'Rielly starts to talk about \"venus dames\" unprompted and acting strangely. Why?",
+      "H_true": "It's the effect that Venus women have on Earth men. The woman's presence changes his focus.",
+      "H_false": "He's out of sorts from working on the controls. The heat got to him. "
+    }
+  },
+  {
+    "story_title": "Gourmet",
+    "Q_Y": {
+      "question": "The Captain is characterized in all of the following ways EXCEPT:",
+      "Y_true": "acrimonious",
+      "Y_false": "melodramatic"
+    },
+    "Q_H": {
+      "question": "Which is the best description of the relationship between the Doc and the captain?",
+      "H_true": "The Doc respects the captain's position but say something if he thinks he goes too far",
+      "H_false": "They are old friends and the Doc is happy to let poor behavior slide"
+    }
+  },
+  {
+    "story_title": "Confidence Game",
+    "Q_Y": {
+      "question": "Why is it ironic that the narrator calls Doc his dad in the beginning?",
+      "Y_true": "Doc is actually his dad, he only thinks it's a lie",
+      "Y_false": "He only met the Doc a few days ago and they don't know each other well enough to be family"
+    },
+    "Q_H": {
+      "question": "Why does the narrator only want one bed?",
+      "H_true": "He wants to be able to buy himself a coffee later on",
+      "H_false": "He needs the spare money to buy food for himself and Doc"
+    }
+  },
+  {
+    "story_title": "Birds of a Feather",
+    "Q_Y": {
+      "question": "Why did the Wazzenazzian feel that he would be beneficial as an employee to the recruiter?",
+      "Y_true": "He said he knew all there is to know about alien life-forms",
+      "Y_false": "He was capable of speaking all languages. "
+    },
+    "Q_H": {
+      "question": "Which word least describes the narrator?",
+      "H_true": "jealous",
+      "H_false": "clever"
+    }
+  },
+  {
+    "story_title": "Beach Scene",
+    "Q_Y": {
+      "question": "Why does Forbes want to take Purnie?",
+      "Y_true": "Forbes wants Purnie because he emits radiation.",
+      "Y_false": "Forbes wants Purnie because he can stop time."
+    },
+    "Q_H": {
+      "question": "What is NOT true of Purnie?",
+      "H_true": "Purnie meets his best friends",
+      "H_false": "Purnie is thoughtful"
+    }
+  },
+  {
+    "story_title": "Accidental Death",
+    "Q_Y": {
+      "question": "Who is the man climbing the mountain?",
+      "Y_true": "An astronomical surveyor who ended up there by accident",
+      "Y_false": "A mountain guide looking for survivors"
+    },
+    "Q_H": {
+      "question": "Why does Matt feel the need to warn people about the Chingsi?",
+      "H_true": "Matt is convinced the Chingsi are bad luck.",
+      "H_false": "Matt is convinced that Charlie deliberately destroyed the Whale."
+    }
+  },
+  {
+    "story_title": "The Eternal Wall",
+    "Q_Y": {
+      "question": "How did Ned become a mummy?",
+      "Y_true": "A combination of the alkali and mud his body had been soaked in. Also, the years of dryness after the world became a desert.",
+      "Y_false": "The earth became a desert wasteland. All the moisture was leached from the corpse."
+    },
+    "Q_H": {
+      "question": "Why does Loy Chuk build an artificial environment for Ned?",
+      "H_true": "He needs a habitat for Ned, so he can study Ned in a natural setting.",
+      "H_false": "He needs to keep Ned calm. If Ned believes himself to back in his own time, he will remain calm."
+    }
+  },
+  {
+    "story_title": "Mutineer",
+    "Q_Y": {
+      "question": "Which is the most accurate description of the relationship between Gerri and Lane?",
+      "Y_true": "Gerri feels some kind of pity for Lane and tries to make him feel better",
+      "Y_false": "They connect instantly and eventually become lovers"
+    },
+    "Q_H": {
+      "question": "Why does Lane want to go to Mars?",
+      "H_true": "To have a chance to make his own decisions",
+      "H_false": "To follow Gerri Kin, for love"
+    }
+  },
+  {
+    "story_title": "Volpla",
+    "Q_Y": {
+      "question": "Why doesn't the narrator want to tell anyone about his experiments?",
+      "Y_true": "He wants to sit back and watch what happens when they're released on the world",
+      "Y_false": "He wants to wait until he can publish a paper about his results"
+    },
+    "Q_H": {
+      "question": "What does the narrator consider an imminent fun game?",
+      "H_true": "Releasing mutants into the world.",
+      "H_false": "Scattering young black-snakes inside people's homes."
+    }
+  },
+  {
+    "story_title": "The Big Headache",
+    "Q_Y": {
+      "question": "What caused Macklin to lose his intelligence?",
+      "Y_true": "His brain cells were not working properly",
+      "Y_false": "He was only pretending "
+    },
+    "Q_H": {
+      "question": "Why does Macklin have objections to going back?",
+      "H_true": "He doesn't want to go back. He'd rather be \"stupid\" than having headaches and always worrying.",
+      "H_false": "It's too risky to try the experiment again. He'd rather take his chances the way he is now. "
+    }
+  },
+  {
+    "story_title": "Breakaway",
+    "Q_Y": {
+      "question": "What do you think life is like for Mary and Phil after the events of the story?",
+      "Y_true": "Phil closes himself off, resenting Mary for forcing his hand.",
+      "Y_false": "Mary is thankful that Phil did not leave, and their lives continue as normal."
+    },
+    "Q_H": {
+      "question": "Which of the following best serves as a metaphor for Phil and Mary's relationship, by the end of the story?",
+      "H_true": "The new, government-built town",
+      "H_false": "Mary's cigarette burned down too far"
+    }
+  },
+  {
+    "story_title": "Call Him Nemesis",
+    "Q_Y": {
+      "question": "Why did the bank robbers end up crashing?",
+      "Y_true": "The Scorpion somehow melted their tires.",
+      "Y_false": "They didn't realize the car they stole was damaged. "
+    },
+    "Q_H": {
+      "question": "If the newspapers and the police choose to continue ignoring the letters from The Scorpion, what will likely happen?",
+      "H_true": "The Scorpion will step in again, leaving his signature, and likely send another letter to the newspaper as a warning to criminals. ",
+      "H_false": "The Scorpion will likely retaliate against the newspapers in his own dangerous stunt. "
+    }
+  },
+  {
+    "story_title": "Cosmic Yo-Yo",
+    "Q_Y": {
+      "question": "What would have likely happened had Parker and Queazy or the Saylor brothers never located the asteroid?",
+      "Y_true": "Starre would have been able to call off the wedding to Mac. ",
+      "Y_false": "Mr. Burnside would have traveled to get the asteroid himself. "
+    },
+    "Q_H": {
+      "question": "Why does Starre lay claim to the asteroid?",
+      "H_true": "She's trying to delay her arranged marriage, by preventing the asteroid from ever being delivered.",
+      "H_false": "She's trying to get away from her life. She can't stand how stubborn her Grandfather is. "
+    }
+  },
+  {
+    "story_title": "Silence is—Deadly",
+    "Q_Y": {
+      "question": "What is Androka’s motivation for using the zone of silence?",
+      "Y_true": "He is helping the Nazi war effort\n",
+      "Y_false": "He is planning revenge against the Nazis for harming his family. \n"
+    },
+    "Q_H": {
+      "question": "Where do the creatures from another world come from?",
+      "H_true": "Germany",
+      "H_false": "The Carethusia "
+    }
+  },
+  {
+    "story_title": "Spatial Delivery",
+    "Q_Y": {
+      "question": "Why is Alice so relaxed when she finds out there is no incubator aboard the space station?",
+      "Y_true": "Alice knows any room in the space station can be made into a giant incubator with minor adjustments.",
+      "Y_false": "Alice is feeling delirious due to the pains of natural childbirth and is only concerned with getting the baby out, and getting the pain to stop at the moment."
+    },
+    "Q_H": {
+      "question": "How does Alice feel about delivering the baby on the space station?",
+      "H_true": "She is confident in Major Barnes. She feels he's perfectly competent, though obstetrics is not his field.",
+      "H_false": "She is scared because the baby is so early and there is no incubator onboard the space station."
+    }
+  },
+  {
+    "story_title": "Unborn Tomorrow",
+    "Q_Y": {
+      "question": "What is Simon referring to when he says \"now it comes\" to Betty during their discussion at the beginning of the story?",
+      "Y_true": "The client he is expecting is about to show up.",
+      "Y_false": "He is expecting the usual argument with Betty about her job."
+    },
+    "Q_H": {
+      "question": "Why does Simon ultimately deny Mr. Oyster's request to go to Oktoberfest?",
+      "H_true": "He knows he will not be allowed to do something that might impact the past",
+      "H_false": "He thinks that Mr. Oyster is attempting to alter the space-time continuum"
+    }
+  },
+  {
+    "story_title": "The Birds and the Bees",
+    "Q_Y": {
+      "question": "Which sentence describes the central theme of this story?",
+      "Y_true": "The death of curiosity, combined with overreliance on technology, will lead to an ignorant society.",
+      "Y_false": "History is doomed to repeat itself because humans fail to learn from their mistakes."
+    },
+    "Q_H": {
+      "question": "Which is the most accurate description of why Xeon is in trouble?",
+      "H_true": "The suggestions he made were against the societal ideals",
+      "H_false": "He was not supposed to point out any flaws in the current government structure"
+    }
+  },
+  {
+    "story_title": "...After a Few Words...",
+    "Q_Y": {
+      "question": "What is the significance of the story's title?",
+      "Y_true": "It hints at sponsorship being relevant",
+      "Y_false": "We shows that this is part of a newscast recording"
+    },
+    "Q_H": {
+      "question": "What is the purpose of the battle scene from the story?",
+      "H_true": "To associate tobacco products with masculinity, brotherhood, and pride",
+      "H_false": "To illustrate the powerful bonds of allegiance among soldiers on the battlefield"
+    }
+  },
+  {
+    "story_title": "Quest of Thig",
+    "Q_Y": {
+      "question": "Why does Thig leave a note at Torp's desk?",
+      "Y_true": "He wants to make sure no one comes to invade Earth, and have reason to fear doing so. ",
+      "Y_false": "He wants to warn the other Orthans about the potential dangers of Earth. "
+    },
+    "Q_H": {
+      "question": "Why does Thig change his mind about the invasion?",
+      "H_true": "He remembers Ellen and the love he felt, and doesn't want to leave.",
+      "H_false": "He has forgotten why he lives for the Hord. "
+    }
+  },
+  {
+    "story_title": "Charity Case",
+    "Q_Y": {
+      "question": "What should probably happen to William?",
+      "Y_true": "he should seek professional help",
+      "Y_false": "he should find out who killed the man"
+    },
+    "Q_H": {
+      "question": "Who is getting William in trouble with his parents?",
+      "H_true": "William",
+      "H_false": "William's twin"
+    }
+  },
+  {
+    "story_title": "All Day September",
+    "Q_Y": {
+      "question": "Why does Evans give up his drinking water?",
+      "Y_true": "Using the water is the only way for his transportation to work",
+      "Y_false": "He knows he does not have enough to survive so he uses it to save his equipment"
+    },
+    "Q_H": {
+      "question": "What is Evans' primary dilemma?",
+      "H_true": "If he is to discover a new water source, he must utilize his low, existing source to find it",
+      "H_false": "He has a limited amount of time until the next meteor shower hits and permanently destroys his equipment"
+    }
+  },
+  {
+    "story_title": "Junior Achievement",
+    "Q_Y": {
+      "question": "Why does Mr. Henderson want to work for the children?",
+      "Y_true": "The children are incredibly successful.",
+      "Y_false": "He needs the money to pay for his mortgage."
+    },
+    "Q_H": {
+      "question": "Why will the group be out of the mouse business by the fall?",
+      "H_true": "The mice are breeding so fast, they will not be a novelty much longer.",
+      "H_false": "When the cold weather comes in the fall, the mice won't survive in the cold barn."
+    }
+  },
+  {
+    "story_title": "Planet of Dread",
+    "Q_Y": {
+      "question": "Why doesn't the crew throw Moran out of the airlock?",
+      "Y_true": "They are not murderers.",
+      "Y_false": "They are marooning him as punishment for murder."
+    },
+    "Q_H": {
+      "question": "Why didn't Moran kill Harper?",
+      "H_true": "Moran is not a murderer at heart. He only killed the other man to save a life.",
+      "H_false": "Moran is not a killer."
+    }
+  },
+  {
+    "story_title": "A Filbert Is a Nut",
+    "Q_Y": {
+      "question": "What are the necessary components for Thaddeus to cause an \"event\"?",
+      "Y_true": "An object and his stare",
+      "Y_false": "Clay and his stare"
+    },
+    "Q_H": {
+      "question": "What does the colonel seem to think about the bomb situation at the mental institution?",
+      "H_true": "He is worried about the perception if others hear about what's happening",
+      "H_false": "He wants to keep the story away from the newspapers so that others cannot learn Thaddeus' secrets"
+    }
+  },
+  {
+    "story_title": "Cakewalk to Gloryanna",
+    "Q_Y": {
+      "question": "After reading about the troubles of Captain Hannah maintaining the marocca during the transport to Gloryanna III, what can one infer about his character?",
+      "Y_true": "Captain Hannah is a clever and sharp man.",
+      "Y_false": "Captain Hannah is a disorganized thinker."
+    },
+    "Q_H": {
+      "question": "What central difference between the planets Gloryanna and Mypore is most important to the story? Why is this significant to Hannah and the narrator?",
+      "H_true": "Gloryanna has outlawed and eradicated the marocca plants, while Mypore continues to cultivate the plants. Hannah and the narrator think they will be able to make an enormous profit by transporting and selling the plants to Gloryanna.",
+      "H_false": "Mypore has outlawed and eradicated the marocca plants, while Gloryanna continues to cultivate them. Hannah and the narrator think they will be able to make an enormous profit by transporting and selling the plants to Mypore. "
+    }
+  },
+  {
+    "story_title": "Rattle OK",
+    "Q_Y": {
+      "question": "What didn't Ann receive from Hartshorne-Logan?",
+      "Y_true": "a response to her complaint letter",
+      "Y_false": "a letter regarding money owed"
+    },
+    "Q_H": {
+      "question": "Based on the context of the story, on which day was the package received to the home?",
+      "H_true": "Tuesday",
+      "H_false": "Wednesday"
+    }
+  },
+  {
+    "story_title": "And Then the Town Took Off",
+    "Q_Y": {
+      "question": "What impression can be made about Don’s feelings towards Alis?",
+      "Y_true": "He was quickly becoming fond of her.",
+      "Y_false": "He was afraid of her because of her boldness. "
+    },
+    "Q_H": {
+      "question": "Which theory didn't they rule out for how Superior went missing?",
+      "H_true": "magnetized levitation",
+      "H_false": "secret government experiments"
+    }
+  },
+  {
+    "story_title": "Voyage to Far N'jurd",
+    "Q_Y": {
+      "question": "Where is the ship sailing?",
+      "Y_true": "Somewhere in deep space.",
+      "Y_false": "In Koltah."
+    },
+    "Q_H": {
+      "question": "Why does everyone seem interested in Jane?",
+      "H_true": "There is not enough information to say for certain",
+      "H_false": "She is the best at doing her duty, so she is sought after as a wife"
+    }
+  },
+  {
+    "story_title": "The Hunted Heroes",
+    "Q_Y": {
+      "question": "What likely happens to Val and Ron after the story ends?",
+      "Y_true": "They stay on Mars for their contract and then move on to a different project",
+      "Y_false": "They stay on Mars for a few more weeks before heading back to Earth"
+    },
+    "Q_H": {
+      "question": "How did Ledman get to Mars?",
+      "H_true": "He saved his money to send himself",
+      "H_false": "He was part of a uranium company who funded his trip"
+    }
+  },
+  {
+    "story_title": "The 64-Square Madhouse",
+    "Q_Y": {
+      "question": "What is an accurate assumption about the Machine in the article?",
+      "Y_true": "It \"thinks\" in a way that is more planned than a human.",
+      "Y_false": "The Machine is accurate yet slow compared to other computers."
+    },
+    "Q_H": {
+      "question": "What is the significance of the players’ names?",
+      "H_true": "The players‘ names correspond with what country has the most chess mastery, with Russian names hold the utmost interest.",
+      "H_false": "The players‘ names represent how chess rivals reflect political rivals. "
+    }
+  },
+  {
+    "story_title": "Pick a Crime",
+    "Q_Y": {
+      "question": "Why does Hendricks help Joe?",
+      "Y_true": "Hendricks knows Joe will not go for the free treatment. ",
+      "Y_false": "Hendricks knows becoming an EX is the way for Joe to get an excellent job."
+    },
+    "Q_H": {
+      "question": "How does the CPA prevent crime?",
+      "H_true": "The CPA prevents crime using constant surveillance, subliminal messaging, public shaming, and various psychological treatments, including lobotomy.",
+      "H_false": "The CPA prevents crime with brain implants that suppress the criminal nature."
+    }
+  },
+  {
+    "story_title": "The Long Remembered Thunder",
+    "Q_Y": {
+      "question": "Of the following options, which best describes the relationship between Tremaine and Jess?",
+      "Y_true": "They knew each other growing up and are temporarily working together.",
+      "Y_false": "They're childhood friends and they ran into each other and caught up for old times' sake."
+    },
+    "Q_H": {
+      "question": "Did the questions Tremaine needed answers to get resolved?",
+      "H_true": "No. He still doesn't know where the transmission is coming from.",
+      "H_false": "No. He thinks that Miss Carroll is behind this out of spite for Mr. Bram, but he's not quite sure."
+    }
+  },
+  {
+    "story_title": "Monopoly",
+    "Q_Y": {
+      "question": "Which is the best summary of this story?",
+      "Y_true": "A man realizes his obliviousness and shifts his morality as a result.",
+      "Y_false": "A man loses hope for his world and gives up in the fight for justice."
+    },
+    "Q_H": {
+      "question": "What lesson did Brian learn from his experience?",
+      "H_true": "That the Venus Consolidated police weren’t honest.",
+      "H_false": "That Serono Zeburzac was a rebel insider."
+    }
+  },
+  {
+    "story_title": "Homecoming",
+    "Q_Y": {
+      "question": "What is the overall tone of the article?",
+      "Y_true": "Grim",
+      "Y_false": "Serious"
+    },
+    "Q_H": {
+      "question": "Who is the protagonist of the story and what is their main objective?",
+      "H_true": "An ex soldier who fought in World War III, traveling home to his wife.",
+      "H_false": "An ex soldier who fought in World War II, traveling home to his wife and children. "
+    }
+  },
+  {
+    "story_title": "Spaceman on a Spree",
+    "Q_Y": {
+      "question": "What is the main reason that Gubelin is so resentful of Si’s decision?",
+      "Y_true": "He fears the end of the Space Exploration program, and for mankind‘s research of space to come to an end.",
+      "Y_false": "He doesn‘t want to have to go through the effort of training a new spaceman, as it‘s very costly and time consuming."
+    },
+    "Q_H": {
+      "question": "Why did the Department hope that Si would continue for three more space missions?",
+      "H_true": "It would take too long to train a new pilot to complete the explorations.",
+      "H_false": "He was the best of the best in the space exploration team."
+    }
+  },
+  {
+    "story_title": "...And It Comes Out Here",
+    "Q_Y": {
+      "question": "Which isn't a feeling that the older man expects of the younger man?",
+      "Y_true": "anger",
+      "Y_false": "worry"
+    },
+    "Q_H": {
+      "question": "What isn't something the guest expects the younger man to do?",
+      "H_true": "listen to his directions very carefully",
+      "H_false": "run the time machine"
+    }
+  },
+  {
+    "story_title": "The Monster Maker",
+    "Q_Y": {
+      "question": "What is not a type technology that is used in this story?",
+      "Y_true": "Tasers that paralyze individuals and render them unconscious",
+      "Y_false": "Highly advanced space travel"
+    },
+    "Q_H": {
+      "question": "Which best describes the relationship between the protagonists?",
+      "H_true": "They work together and are able to coordinate with each other pretty well.",
+      "H_false": "They're friendly but their friendship detracts from their ability to problem-solve and be productive."
+    }
+  },
+  {
+    "story_title": "Pen Pal",
+    "Q_Y": {
+      "question": "What is significant about the meal Matilda is served?",
+      "Y_true": "It lends credence to Gorka’s otherworldly claims. How else could it have happened? ",
+      "Y_false": "It’s exactly what she wanted to eat, and she didn’t have to ask for it. ,"
+    },
+    "Q_H": {
+      "question": "Why does no one on town know who Haron Gorka is?",
+      "H_true": "He‘s not a real resident, but an interstellar visitor.",
+      "H_false": "He‘s not a real resident. He‘s using a fake name while he stays in town. "
+    }
+  },
+  {
+    "story_title": "A Gift from Earth",
+    "Q_Y": {
+      "question": "Who changed the least throughout the story?",
+      "Y_true": "Broderick",
+      "Y_false": "Kalrab"
+    },
+    "Q_H": {
+      "question": "What characteristic of Zotul does he believe he shares with the Earthmen?",
+      "H_true": "integrity",
+      "H_false": "cunning"
+    }
+  },
+  {
+    "story_title": "The Radio Planet",
+    "Q_Y": {
+      "question": "What shocked Myles the most when he woke up on the beach?",
+      "Y_true": "Enemies arrived that he believed to be dead.",
+      "Y_false": "He was on Venus instead of Mars."
+    },
+    "Q_H": {
+      "question": "Who does Myles Cabot help upon returning to Poros? What does he do for them?",
+      "H_true": "Myles helps the Formian race establish a new ant queen as their leader, replacing King Yuri who came to rule them after the war. \n\n",
+      "H_false": "Myles helps the Human race establish a new ant queen as their leader, replacing the Formian King Yuri who came to rule them after the war. \n"
+    }
+  },
+  {
+    "story_title": "Atom Mystery [Young Atom Detective]",
+    "Q_Y": {
+      "question": "Who is Teena and what role does she play in Chapter one and chapter two?",
+      "Y_true": "Teena is Eddie‘s friend and neighbor. She accompanies him on a prospecting hike, where they don‘t find any trace of radioactivity but still enjoy a lunch together.",
+      "Y_false": "Teena is Eddie‘s friend and neighbor. She accompanies Eddie on a hike through the hills behind the college, where he teaches her all about isotopes. "
+    },
+    "Q_H": {
+      "question": "What best describes how the overall tone changed from the beginning of the article?",
+      "H_true": "From lighthearted to tense.",
+      "H_false": "From upbeat to sympathetic."
+    }
+  },
+  {
+    "story_title": "Warrior of Two Worlds",
+    "Q_Y": {
+      "question": "Had the narrator vehemently denied his position as Yandro, would the opinions of the people have likely changed?",
+      "Y_true": "No, because the inhabitants strictly uphold and respect the prophecy that named the narrator as Yandro.",
+      "Y_false": "No, because the narrator would eventually be forced against his own will to be Yandro."
+    },
+    "Q_H": {
+      "question": "What is the significance of the narrator’s height?",
+      "H_true": "It shows he is not from Dondromogon",
+      "H_false": "It shows he is the Conquering Stranger "
+    }
+  },
+  {
+    "story_title": "Peggy Finds the Theatre",
+    "Q_Y": {
+      "question": "How would you describe the tone throughout the passage?",
+      "Y_true": "While there was some uncertainty and excitement, it was relatively tranquil throughout.",
+      "Y_false": "It went from highly excited to mildly calm."
+    },
+    "Q_H": {
+      "question": "Why was Socks a part of this story?",
+      "H_true": "Technically Socks helped Peggy pass the time, but Socks also gives us more of an idea of what Peggy's life at home is like and how wonderful it is.",
+      "H_false": "She only helped Peggy pass time while her parents made a decision."
+    }
+  },
+  {
+    "story_title": "The Giants Return",
+    "Q_Y": {
+      "question": "What characteristics best describe Captain Llud in the present part of the story?",
+      "Y_true": "Tired, defeated, and confused",
+      "Y_false": "Jolly, excited, and tired"
+    },
+    "Q_H": {
+      "question": "At what moment in the story did the characters seem to have the least hope?",
+      "H_true": "When they were mid-communication with the violent ships.",
+      "H_false": "When they realized the oxygen supply was extremely low."
+    }
+  },
+  {
+    "story_title": "The Super Opener",
+    "Q_Y": {
+      "question": "How did the majority of Piltdon workers feel about Feetch?",
+      "Y_true": "They respected him",
+      "Y_false": "They felt indifferent towards him"
+    },
+    "Q_H": {
+      "question": "Why did Kalvin continue researching on his own at home?",
+      "H_true": "He wanted to better understand the technology and create a solution.",
+      "H_false": "He wanted to be sure it was safe."
+    }
+  },
+  {
+    "story_title": "The Perfectionists",
+    "Q_Y": {
+      "question": "Why does Pembrook shoot the man in the corner?",
+      "Y_true": "The man in the corner is an android sent by alien masters to facilitate an invasion of Earth.",
+      "Y_false": "The man in the corner was an alien invader."
+    },
+    "Q_H": {
+      "question": "Why did Frank shoot his new client at the beginning of the story?",
+      "H_true": "He wanted to collect the body as evidence of an impending attack.",
+      "H_false": "The man who walked into his office was dangerous and Frank needed to protect himself."
+    }
+  },
+  {
+    "story_title": "In Case of Fire",
+    "Q_Y": {
+      "question": "Who are the Karna?",
+      "Y_true": "The Karna are the second most powerful race in the galaxy. They are skilled negotiators.",
+      "Y_false": "The Karna are a race of warriors bent on destroying the Earth."
+    },
+    "Q_H": {
+      "question": "What do Miss Drayson and Kylen Braynek have in common?",
+      "H_true": "They are both paranoid about what other people think.",
+      "H_false": "They externalize a lot of their thought processes."
+    }
+  },
+  {
+    "story_title": "Monkey On His Back",
+    "Q_Y": {
+      "question": "How does Bergstrom feel about Zarwell?",
+      "Y_true": "Bergstrom admires Zarwell. He wants Zarwell to help him plan a government revolution.",
+      "Y_false": "Bergstrom thinks Zarwell is a dangerous man. He is thinking about turning Zarwell over to the authorities."
+    },
+    "Q_H": {
+      "question": "What do the settings of Zarwell's comanalyses have in common?",
+      "H_true": "pursuits",
+      "H_false": "deception"
+    }
+  },
+  {
+    "story_title": "I'm a Stranger Here Myself",
+    "Q_Y": {
+      "question": "What is Paul doing in Tangier?",
+      "Y_true": "He is on a business trip to find a source of protein.",
+      "Y_false": "He is on a business trip scouting locations for thrill-seeking tourists."
+    },
+    "Q_H": {
+      "question": "Why does Paul think an alien wouldn't be able to hide on Earth?",
+      "H_true": "The Earth has so many intelligence agencies, at least one would be watching when an alien gave itself away.",
+      "H_false": "An alien would not be able to mimic a human enough to fit in with society."
+    }
+  },
+  {
+    "story_title": "The Delegate from Venus",
+    "Q_Y": {
+      "question": "Why didn't the Delegate have a robotic voice?",
+      "Y_true": "The robot was voiced by Professor Coltz remotely.",
+      "Y_false": "The robot was programmed by Professor Coltz and the group that helped him to speak eight languages."
+    },
+    "Q_H": {
+      "question": "Why is Conners upset with Bridges?",
+      "H_true": "Conners received a report that Bridges was behaving unprofessionally.",
+      "H_false": "Conners was chewed out by a Senator because Bridges was trying to get information,"
+    }
+  },
+  {
+    "story_title": "The Talkative Tree",
+    "Q_Y": {
+      "question": "What would have happened if the Peace State had not crash landed?",
+      "Y_true": "A revolution on Haurtoz would never have happened.",
+      "Y_false": "A different crew would eventually follow a similar path."
+    },
+    "Q_H": {
+      "question": "Which description is the best representation of Yrtok's role in the story?",
+      "H_true": "Her fall leads Kolin to find Ashlew",
+      "H_false": "She found the purple berries, an important source of food for the stranded crew."
+    }
+  },
+  {
+    "story_title": "The First One",
+    "Q_Y": {
+      "question": "Why did Edith greet her husband the way she did when he returned home?",
+      "Y_true": "In some ways, he was not the man who had left and she was nervous about the change.",
+      "Y_false": "She was nervous because she had not seen him in almost a year."
+    },
+    "Q_H": {
+      "question": "Why is Henry referred to as the First One",
+      "H_true": "Was the first person pieced back together after death.",
+      "H_false": "He was the first one to make it back alive from the type of trip that he went on."
+    }
+  },
+  {
+    "story_title": "The Green Beret",
+    "Q_Y": {
+      "question": "Which statement best describes how Read changes throughout the story?",
+      "Y_true": "He overcame his cowardly ways to act for the good of his mission.",
+      "Y_false": "He became much less of an individual and more of a pawn for the UN."
+    },
+    "Q_H": {
+      "question": "Why can't they transmit Umluana as planned?",
+      "H_true": "The controls at the Belderkan Preserve have been destroyed.",
+      "H_false": "The controls at the Miaka station have been destroyed."
+    }
+  },
+  {
+    "story_title": "To Each His Star",
+    "Q_Y": {
+      "question": "Which best describes the relationship between Russell and Dunbar?",
+      "Y_true": "They have similar goals but do not necessarily work well together",
+      "Y_false": "Neither of them likes the other, in a way that hinders group dynamics"
+    },
+    "Q_H": {
+      "question": "What is ironic about Russell's decision to kill Dunbar?",
+      "H_true": "If the four men had followed Dunbar, they all would have survived.",
+      "H_false": "After killing Dunbar, Russell became just as delusional as Dunbar"
+    }
+  },
+  {
+    "story_title": "Houlihan's Equation",
+    "Q_Y": {
+      "question": "What helps Houlihan to focus more intently on his own problem?",
+      "Y_true": "collaborating with the leprechauns, who speak his same language",
+      "Y_false": "being outdoors, where his creativity is stimulated"
+    },
+    "Q_H": {
+      "question": "Why didn't the narrator provide the leprechauns with the correct equation?",
+      "H_true": "He believes humans need to believe in things like leprechauns in order to sustain their own race",
+      "H_false": "He wants to take credit for the equation and is concerned they will try to get credit first"
+    }
+  },
+  {
+    "story_title": "Grifters' Asteroid",
+    "Q_Y": {
+      "question": "What was so unique about Genius that made Joe and Harvey want to purchase him?",
+      "Y_true": "His 6 arms",
+      "Y_false": "His useful mechanical skills"
+    },
+    "Q_H": {
+      "question": "Why did Harvey and Joe have such a large tab and the bar that was ran by Johnson?",
+      "H_true": "They were unaware of the cost of the water served by the bartender.",
+      "H_false": "They had consumed multiple alcoholic beverages and lost track of how much they had ordered. "
+    }
+  },
+  {
+    "story_title": "Booze You Can Use",
+    "Q_Y": {
+      "question": "What was the author’s general finding about the true taste of the beers?",
+      "Y_true": "Low cost beers actually rate pretty well when people don’t know what they’re drinking",
+      "Y_false": "The results were too varied to really make a general conclusion"
+    },
+    "Q_H": {
+      "question": "What was the general set up of the experiment?",
+      "H_true": "The tasters were completely blind to which beers were being used in the experiment",
+      "H_false": "The tasters chose the best and worst out of a set of 5 beers, and the author ran statistics to come out with rankings"
+    }
+  },
+  {
+    "story_title": "The logistics of presidential adultery.",
+    "Q_Y": {
+      "question": "Why did Kennedy not give much credence to anyone finding out about his indiscretions?",
+      "Y_true": "He trusted the media to not report things like that about him.",
+      "Y_false": "The media was not interested in things like that when Kennedy was in office."
+    },
+    "Q_H": {
+      "question": "According to The Washington Times,",
+      "H_true": "It would be almost impossible for Clinton to have had an affair without the Secret Service knowing.",
+      "H_false": "There are no fewer than five possible explanations of how Clinton had an affair without the world finding out faster than it did."
+    }
+  },
+  {
+    "story_title": "Reading the Inaugurals",
+    "Q_Y": {
+      "question": "What point did Washington make in his address?",
+      "Y_true": "Being entrusted with such power makes you aware of the ways in which you are lacking",
+      "Y_false": "He was becoming the voice of his country"
+    },
+    "Q_H": {
+      "question": "What does the author think about inaugural speech writers compared with the delivering presidents?",
+      "H_true": "The subject is not covered",
+      "H_false": "The writers are cast aside as unimportant in the process"
+    }
+  },
+  {
+    "story_title": "Edward W. Said",
+    "Q_Y": {
+      "question": "What does the author suggest are some traits Said possesses?",
+      "Y_true": "Boldness, confidence",
+      "Y_false": "Vanity, disorganization"
+    },
+    "Q_H": {
+      "question": "Where did Edward grow up?",
+      "H_true": "First Cairo, then the US",
+      "H_false": "First Jerusalem, then Cairo, then the US"
+    }
+  },
+  {
+    "story_title": "Diamonds in the Rough",
+    "Q_Y": {
+      "question": "How many of the golden era ballparks had already been torn down?",
+      "Y_true": "10",
+      "Y_false": "3"
+    },
+    "Q_H": {
+      "question": "How did the golden age parks compare to the older parks?",
+      "H_true": "The older ones were more intimate",
+      "H_false": "The newer ones were less hazardous"
+    }
+  },
+  {
+    "story_title": "My Father's Estate",
+    "Q_Y": {
+      "question": "What was the relationship like between the father and son in the piece?",
+      "Y_true": "The son held great respect for his father and valued his legacy",
+      "Y_false": "The son came to discover that his father had secrets in his finances upon his death"
+    },
+    "Q_H": {
+      "question": "Why did the author say his father had left him a big estate?",
+      "H_true": "Because of the intangible things his father left him",
+      "H_false": "Because he did leave a large amount before taxes"
+    }
+  },
+  {
+    "story_title": "The Olympic Gene Pool",
+    "Q_Y": {
+      "question": "The author says, \"After all, as biomechanical machines with a standard set of parts, humans should be subject to the same limitations we in, say, automobiles. How come they aren't?\" What is a good answer to this question based on the article?",
+      "Y_true": "Actually, they are subject to biomechanical limitations imposed by factors like the speed at which the lungs can exchange oxygen. It's just that to date, that is not what is capping human performance potential.",
+      "Y_false": "Unlike inorganic automobile parts, the human machine can be improved without replacing any of its parts."
+    },
+    "Q_H": {
+      "question": "What does the author say about correlating athletic ability with race?",
+      "H_true": "The ability is most likely due to environment and training rather than race",
+      "H_false": "It is possible to test for a correlation even though one has not yet been proven"
+    }
+  },
+  {
+    "story_title": "Vulgar Keynesians",
+    "Q_Y": {
+      "question": "What did Keynes posit was an influence on the rate of interest in the economy?",
+      "Y_true": "Desire to hold cash unless incentivized otherwise",
+      "Y_false": "Balance between savings and investment"
+    },
+    "Q_H": {
+      "question": "What is true about Keynes?",
+      "H_true": "Some of his followers have distorted his ideas",
+      "H_false": "His ideas were simplistic"
+    }
+  },
+  {
+    "story_title": "Defining Decay Down",
+    "Q_Y": {
+      "question": "Why does the author think people's satisfaction with their own teeth has gone down over time?",
+      "Y_true": "Younger generations have much higher expectations for dental health ",
+      "Y_false": "Dentistry has gotten more expensive and become unaffordable"
+    },
+    "Q_H": {
+      "question": "Why are patients more likely to want to undergo procedures after the use of the camera?",
+      "H_true": "Seeing the imperfections inside their mouths disgusts them",
+      "H_false": "Doctors are able to more accurately diagnose their issues"
+    }
+  },
+  {
+    "story_title": "Folie ?",
+    "Q_Y": {
+      "question": "What is true about the subject of the book the author read?",
+      "Y_true": "He developed mental illness as an adult but later improved",
+      "Y_false": "He was born crazy but accomplished a lot in life anyway"
+    },
+    "Q_H": {
+      "question": "What was not true about Nash's college years?",
+      "H_true": "He fit in well with the mathematical geniuses",
+      "H_false": "He liked to draw attention to himself"
+    }
+  },
+  {
+    "story_title": "I, Antichrist?",
+    "Q_Y": {
+      "question": "Which is NOT a reason why the narrator is concerned with the antichrist?",
+      "Y_true": "He is conducting research for his dissertation. ",
+      "Y_false": "He thinks his life will be more important and influential than the average person."
+    },
+    "Q_H": {
+      "question": "How does Lahaye feel about Jews?",
+      "H_true": "He blames Jews for much of the evil in the world.",
+      "H_false": "He thinks being European is worse than being Jewish."
+    }
+  },
+  {
+    "story_title": "The Flytrap Blame Game",
+    "Q_Y": {
+      "question": "The information presented shows that the person who was the most innocent involved in this scandal to be",
+      "Y_true": "Chelsea",
+      "Y_false": "Hillary"
+    },
+    "Q_H": {
+      "question": "According to Slate's ratings, which of the orderings below correctly goes from most reprehensible to least reprehensible?",
+      "H_true": "James Carville, Lanny Davis, Bob Barr, Erskine Bowles",
+      "H_false": "Bob Barr, James Carville, Lanny Davis, Erskine Bowles"
+    }
+  },
+  {
+    "story_title": "We Do Understand",
+    "Q_Y": {
+      "question": "How did the author feel about Tannen's book?",
+      "Y_true": "They found a small list of things that were worthwhile in it",
+      "Y_false": "They found nothing worthwhile in it"
+    },
+    "Q_H": {
+      "question": "Why does Tannen say her book is not about civility?",
+      "H_true": "She thinks civility is too superficial of a solution",
+      "H_false": "She doesn't think books about civility are worth reading"
+    }
+  },
+  {
+    "story_title": "Off Course",
+    "Q_Y": {
+      "question": "How do most of the humans on Earth feel about Dameri Tass’s arrival?",
+      "Y_true": "They are eager to learn from him",
+      "Y_false": "They fear he wants to wipe out human civilization"
+    },
+    "Q_H": {
+      "question": "What happened to Dameri while he was in custody of the government?",
+      "H_true": "He slept almost the entire time",
+      "H_false": "He learned horses were creatures that could be ridden"
+    }
+  },
+  {
+    "story_title": "Castaways of Eros",
+    "Q_Y": {
+      "question": "Why does Pop prefer Dick's help with the spaceship more than Bobby's?",
+      "Y_true": "Dick is more mature and takes the journey seriously, unlike Bobby.",
+      "Y_false": "Bobby does not cooperate with Pop as well as Dick does."
+    },
+    "Q_H": {
+      "question": "Why was Pop upset about leaving life on Earth?",
+      "H_true": "He felt selfish for making the family join along in his endeavors to a new planet.",
+      "H_false": "The family was forced to leave Earth even though they did not want to leave."
+    }
+  },
+  {
+    "story_title": "Jamieson",
+    "Q_Y": {
+      "question": "When did Earl go to space?",
+      "Y_true": "During his first year of university",
+      "Y_false": "After he finished college"
+    },
+    "Q_H": {
+      "question": "How many times is Earl rescued by others teleporting to his location?",
+      "H_true": "One",
+      "H_false": "None"
+    }
+  },
+  {
+    "story_title": "The Spicy Sound of Success",
+    "Q_Y": {
+      "question": "What is the relationship between Gavin and the First Officer like?",
+      "Y_true": "Gavin learns important lessons in leadership from him",
+      "Y_false": "Gavin trusts him so much as to go together on space expeditions, but not further"
+    },
+    "Q_H": {
+      "question": "How did Quade feel about the situation?",
+      "H_true": "He was less cautious than others",
+      "H_false": "He wished he was getting hazard pay"
+    }
+  },
+  {
+    "story_title": "Star Performer",
+    "Q_Y": {
+      "question": "Why did the Earthmen attack Gavir intially?",
+      "Y_true": "The Earthmen were older citizens who had outgrown their ethical conditioning",
+      "Y_false": "Earthlings were very prejudiced against Martians"
+    },
+    "Q_H": {
+      "question": "Why was Gavir brought to Earth from Mars?",
+      "H_true": "To perform in a dreamwave performance",
+      "H_false": "As punishment for dissenting against the MDC"
+    }
+  },
+  {
+    "story_title": "The Star-Sent Knaves",
+    "Q_Y": {
+      "question": "What feeling does Dan's accidental encounter with the young girl evoke for the readers?",
+      "Y_true": "A feeling of suspense because the girl could notice Dan at any moment.",
+      "Y_false": "A feeling of horror knowing that Dan could be arrested from his previous escape."
+    },
+    "Q_H": {
+      "question": "Why was Dan determined to wait so long for the thieves?",
+      "H_true": "It was his plan to have the chance to time-travel.",
+      "H_false": "He wanted to steal the carrier so the thieves could not leave."
+    }
+  },
+  {
+    "story_title": "The Stoker and the Stars",
+    "Q_Y": {
+      "question": "In the end, what is the relationship between the humans and the alien races?",
+      "Y_true": "The relationship is cordial.",
+      "Y_false": "The species live in communities together. "
+    },
+    "Q_H": {
+      "question": "What is a theme of the story?",
+      "H_true": "Simple actions can mend deep conflict.",
+      "H_false": "War changes people."
+    }
+  },
+  {
+    "story_title": "Hagerty's Enzymes",
+    "Q_Y": {
+      "question": "Though the robots were the main issue at the hotel, was human error still an issue in Harper's overall stay?",
+      "Y_true": "Yes, because the human desk clerk had given him the wrong room.",
+      "Y_false": "Yes, because Harper was continuously bothered by complaining patrons."
+    },
+    "Q_H": {
+      "question": "By the end of the article, would Harper's opinion of Mrs. Jacobsen at the front desk be different?",
+      "H_true": "Yes, because Harper also had a frustrating experience with the robots.",
+      "H_false": "No, because he would still believe that her complaints were unreasonable."
+    }
+  },
+  {
+    "story_title": "Thralls of the Endless Night",
+    "Q_Y": {
+      "question": "What best defines the power struggle between the Hans and the Officers?",
+      "Y_true": "The Officers seemingly maintain control over the Hans for now",
+      "Y_false": "The Officers are fighting with the Hans to take over their land"
+    },
+    "Q_H": {
+      "question": "What is not clearly an element of injustice in this story?",
+      "H_true": "There was rampant sexism",
+      "H_false": "There was classism"
+    }
+  },
+  {
+    "story_title": "Solomon's Orbit",
+    "Q_Y": {
+      "question": "How do Solomon's flying cars work?",
+      "Y_true": "Pressure",
+      "Y_false": "We never learn"
+    },
+    "Q_H": {
+      "question": "What is a theme of the story?",
+      "H_true": "There is great value in ordinary things and people.",
+      "H_false": "The best inventions are made by accident. "
+    }
+  },
+  {
+    "story_title": "Viewpoint",
+    "Q_Y": {
+      "question": "What is the metal box that makes a humming sound?",
+      "Y_true": "A typewriter",
+      "Y_false": "A computer"
+    },
+    "Q_H": {
+      "question": "Where is Broom in the beginning of the story?",
+      "H_true": "An office",
+      "H_false": "A mental hospital"
+    }
+  },
+  {
+    "story_title": "Stalemate in Space",
+    "Q_Y": {
+      "question": "Of the following situations, what was the toughest for Evelyn to handle?",
+      "Y_true": "Having to shoot the prisoner",
+      "Y_false": "Having to dance for her boss"
+    },
+    "Q_H": {
+      "question": "What was the relationship between the globes?",
+      "H_true": "One wished to conquer the other",
+      "H_false": "They desired each other's resources"
+    }
+  },
+  {
+    "story_title": "The Street That Wasn't There",
+    "Q_Y": {
+      "question": "Why did Mr. Chambers' room last so much longer than other parts of the neighborhood?",
+      "Y_true": "He has spend so much time and attention in this room.",
+      "Y_false": "His mind is unusually strong."
+    },
+    "Q_H": {
+      "question": "Why did Mr. Chambers become a recluse?",
+      "H_true": "He was exiled after a controversial theory",
+      "H_false": "He simply did not like people"
+    }
+  },
+  {
+    "story_title": "The Ignoble Savages",
+    "Q_Y": {
+      "question": "What advantage did Skkiru find to being a beggar?",
+      "Y_true": "He could get close to the humans",
+      "Y_false": "The humans gave him money"
+    },
+    "Q_H": {
+      "question": "Why did Skkiru think the dilettante had fixed the lots?",
+      "H_true": "the dilettante was jealous of his girlfriend",
+      "H_false": "the dilettante was egotistical"
+    }
+  },
+  {
+    "story_title": "Slingshot",
+    "Q_Y": {
+      "question": "What is Sylvia's relation to Paul?",
+      "Y_true": "She is his girlfriend",
+      "Y_false": "She is his wife"
+    },
+    "Q_H": {
+      "question": "Why does Coulter help Kovacs on leave?",
+      "H_true": "Coulter likes Kovacs",
+      "H_false": "Coulter doesn't want to be distracted by Marge anymore"
+    }
+  },
+  {
+    "story_title": "Survival Type",
+    "Q_Y": {
+      "question": "What happened after the native tried to help Lanceford?",
+      "Y_true": "They had a telepathic connection",
+      "Y_false": "Lanceford's paralysis went away"
+    },
+    "Q_H": {
+      "question": "What was true about the bugs on the planet?",
+      "H_true": "Some of them were harmless",
+      "H_false": "They killed a lot of natives"
+    }
+  },
+  {
+    "story_title": "The Repairman",
+    "Q_Y": {
+      "question": "Why was it urgent to repair the old Beacon?",
+      "Y_true": "It was causing disruptions in hyperspace travel",
+      "Y_false": "It had been 2000 years since the last routine matinence"
+    },
+    "Q_H": {
+      "question": "Why was the narrator able to take off his camouflage suit in front of the priests?",
+      "H_true": "They were blinded in order to enter the reactor",
+      "H_false": "He had incapacitated them beforehand "
+    }
+  },
+  {
+    "story_title": "The Blue Tower",
+    "Q_Y": {
+      "question": "Why is it important that Corisande's wrinkles show?",
+      "Y_true": "They reveal her true character",
+      "Y_false": "They point out how old she is"
+    },
+    "Q_H": {
+      "question": "Why was Ludovick able to get to the Belphin of Belphins?",
+      "H_true": "He had only love for Belphin",
+      "H_false": "He destroyed the machines"
+    }
+  },
+  {
+    "story_title": "The Link",
+    "Q_Y": {
+      "question": "What is Nehmon most worried about while talking with Ravdin and Dana?",
+      "Y_true": "Ravdin and Dana's plan to stay behind and speak with the Hunters",
+      "Y_false": "The society not being able to leave quickly enough to avoid the hunters"
+    },
+    "Q_H": {
+      "question": "What did Dana mean by the saying the concerts \"have come so far?\"",
+      "H_true": "The concerts have become an event that involves the entire community",
+      "H_false": "They have traveled a great distance to keep having concerts"
+    }
+  },
+  {
+    "story_title": "Conspiracy on Callisto",
+    "Q_Y": {
+      "question": "Why did Duane say he did not recognize the girl?",
+      "Y_true": "He had a head injury",
+      "Y_false": "He was playing dumb"
+    },
+    "Q_H": {
+      "question": "What would most likely have happened if Andrias had not waved out the guard?",
+      "H_true": "Duane would not have escaped",
+      "H_false": "Duane would not have signed the paper"
+    }
+  },
+  {
+    "story_title": "Coming of the Gods",
+    "Q_Y": {
+      "question": "Who is the man with the silver hair?",
+      "Y_true": "the professor in charge of the expedition",
+      "Y_false": "Carlson"
+    },
+    "Q_H": {
+      "question": "Why is Grimm annoyed that Charlotte slept beside Carlson?",
+      "H_true": "Because he is in love with Charlotte and is jealous of the affection between her and Carlson.",
+      "H_false": "Because he is Charlotte's friend and he doesn't think that Carlson is good enough for her. "
+    }
+  },
+  {
+    "story_title": "The Hunters",
+    "Q_Y": {
+      "question": "Why did the lions Mr. George shot dissolve \"as if corroded by some invisible acid?\"",
+      "Y_true": "They were alien shapeshifters, not actual lions",
+      "Y_false": "It was a part of the stage show that Mr. George was putting on "
+    },
+    "Q_H": {
+      "question": "What is Manto and Palit's own language?",
+      "H_true": "Unknown",
+      "H_false": "Pig-Latin"
+    }
+  },
+  {
+    "story_title": "The Spy in the Elevator",
+    "Q_Y": {
+      "question": "Why did his girlfriend put such an emphasis on promptness?",
+      "Y_true": "She was conditioned by her work",
+      "Y_false": "She was a perfectionist"
+    },
+    "Q_H": {
+      "question": "What did he want to ask his girlfriend?",
+      "H_true": "To live with him for awhile",
+      "H_false": "To marry him forever"
+    }
+  },
+  {
+    "story_title": "Bullet with His Name",
+    "Q_Y": {
+      "question": "Why was the neighbor surprised?",
+      "Y_true": "He accidentally saw Ernie using his gift",
+      "Y_false": "He'd never seen Ernie watering the lawn before"
+    },
+    "Q_H": {
+      "question": "What is the purpose of bestowing gifts on Earth?",
+      "H_true": "It is not explained thoroughly enough to say",
+      "H_false": "To accelerate technological progress on the planet"
+    }
+  },
+  {
+    "story_title": "Mars Confidential",
+    "Q_Y": {
+      "question": "How did the Mafia come to be in business on Mars?",
+      "Y_true": "By accidentally finding a spaceship",
+      "Y_false": "By bribing a spaceship company"
+    },
+    "Q_H": {
+      "question": "What is not true about the relationship between Martians and humans?",
+      "H_true": "Martians value what humans bring to their planet, including teaching them new ways to do things like conduct business and build structures.",
+      "H_false": "Martians find no value in the things humans do, such as gold and diamonds, making humans feel"
+    }
+  },
+  {
+    "story_title": "Innocent at Large",
+    "Q_Y": {
+      "question": "What is the relationship like between Gus and Peri?",
+      "Y_true": "They are conspiring con artists",
+      "Y_false": "They are old friends owing each other favors"
+    },
+    "Q_H": {
+      "question": "How many different Martian cons did Matheny speak of to Gus?",
+      "H_true": "3",
+      "H_false": "2"
+    }
+  },
+  {
+    "story_title": "Mr. Meek Plays Polo",
+    "Q_Y": {
+      "question": "What is the likely outcome of the polo game?",
+      "Y_true": "Don't know enough about their abilities to say",
+      "Y_false": "They will likely call a truce"
+    },
+    "Q_H": {
+      "question": "Why is Gus engaged in space fighting?",
+      "H_true": "Largely to ward off boredom",
+      "H_false": "Avenging his father's feud"
+    }
+  },
+  {
+    "story_title": "Morgue Ship",
+    "Q_Y": {
+      "question": "Why are Earth and Venus at war?",
+      "Y_true": "It is not revealed",
+      "Y_false": "To maintain control of the solar system"
+    },
+    "Q_H": {
+      "question": "How did Burnett die?",
+      "H_true": "Casualty of fight with Lethla",
+      "H_false": "Betrayal by Rice"
+    }
+  },
+  {
+    "story_title": "Pied Piper of Mars",
+    "Q_Y": {
+      "question": "What was the author's purpose in describing the feeling the hypnotizing music evoked in such detail every time that it played?",
+      "Y_true": "To convey how powerful the music is.",
+      "Y_false": "To convey the dangerous intent of the music."
+    },
+    "Q_H": {
+      "question": "What would have likely happened with the interaction between Elath Taen and Mr. Ranson at the end of the article if the hypnotizing music had evoked anger instead of sleepiness?",
+      "H_true": "Either Mr. Ranson or Elath Taen would have been harmed or killed.",
+      "H_false": "Elath Taen would have been affected more by the anger-evoking music than Mr. Ranson. "
+    }
+  },
+  {
+    "story_title": "Mightiest Qorn",
+    "Q_Y": {
+      "question": "Why did Zubb want the men to go visit the Qornt?",
+      "Y_true": "He wanted to report their crimes against him",
+      "Y_false": "He wanted them to negotiate a surrender"
+    },
+    "Q_H": {
+      "question": "How did Magnan feel about his reconnaissance assignment?",
+      "H_true": "He was scared and tried every opportunity to get out of it",
+      "H_false": "He was afraid he would do something rash"
+    }
+  },
+  {
+    "story_title": "Jinx Ship to the Rescue",
+    "Q_Y": {
+      "question": "What is the relationship like between Strike and Cob?",
+      "Y_true": "They meet during the course of the story and become easy friends",
+      "Y_false": "They meet during the course of the story, but begin apprehensive of each other"
+    },
+    "Q_H": {
+      "question": "Why does the Captain decide to save Gorman?",
+      "H_true": "He has a sense of duty to not let innocent people die",
+      "H_false": "He prefers their ship to his own"
+    }
+  },
+  {
+    "story_title": "Meeting of the Board",
+    "Q_Y": {
+      "question": "Why did the managers on strike need a lawyer?",
+      "Y_true": "To avoid injunctions by the company ",
+      "Y_false": "To sue the executives of the company"
+    },
+    "Q_H": {
+      "question": "Why were the reports for the Robling company bad?",
+      "H_true": "Poor production and no innovation",
+      "H_false": "Too much spending by the executives"
+    }
+  },
+  {
+    "story_title": "How to Make Friends",
+    "Q_Y": {
+      "question": "How many companions did Manet make with the kit?",
+      "Y_true": "Three",
+      "Y_false": "Two"
+    },
+    "Q_H": {
+      "question": "Who did Manet like the best?",
+      "H_true": "Victor",
+      "H_false": "Trader Tom"
+    }
+  },
+  {
+    "story_title": "The Gravity Business",
+    "Q_Y": {
+      "question": "Why did Joyce try to poison Fweep?",
+      "Y_true": "She wanted to leave the planet",
+      "Y_false": "She was jealous of how much Four liked him"
+    },
+    "Q_H": {
+      "question": "Why did Junior land the ship so roughly?",
+      "H_true": "The planet had a variable gravity field",
+      "H_false": "He kept his thumb on the on-off button"
+    }
+  },
+  {
+    "story_title": "The Princess and the Physicist",
+    "Q_Y": {
+      "question": "What did Zen think of the plan the royal father and daughter hatched?",
+      "Y_true": "He was aware of the plan unfolding the entire time because of his all-knowing",
+      "Y_false": "He was unhappy when they told him"
+    },
+    "Q_H": {
+      "question": "Why did the physicist and anthropologist travel to Uxen?",
+      "H_true": "Because they wanted to study Zen",
+      "H_false": "Because science was banned on Earth"
+    }
+  },
+  {
+    "story_title": "The Conjurer of Venus",
+    "Q_Y": {
+      "question": "What is the relationship like between Caldwell and Johnson?",
+      "Y_true": "Partners on a mission",
+      "Y_false": "Adversarial colleagues"
+    },
+    "Q_H": {
+      "question": "How many different bars do Vee Vee and Johnson visit in the story?",
+      "H_true": "One",
+      "H_false": "Two"
+    }
+  },
+  {
+    "story_title": "Peggy Plays Off-Broadway",
+    "Q_Y": {
+      "question": "What is the storyline of Come Closer?",
+      "Y_true": "Unknown",
+      "Y_false": "The male lead tries to gain the love of a career woman"
+    },
+    "Q_H": {
+      "question": "Which of the following was not an element of the audition process?",
+      "H_true": "People had to improvise in-character to show that they understood their mannerisms and how they'd act in certain situations",
+      "H_false": "People had to initially select the specific role they were auditioning for"
+    }
+  },
+  {
+    "story_title": "No Substitutions",
+    "Q_Y": {
+      "question": "How did the warden handle the 2 men who wanted back into Dreamland?",
+      "Y_true": "He put them together to keep each other occupied",
+      "Y_false": "He kept them both in detention indefinitely"
+    },
+    "Q_H": {
+      "question": "What is the relationship like between Coleman and the warden?",
+      "H_true": "Coleman is playing tricks on the warden and it upsets him",
+      "H_false": "The warden is unsuspecting of Coleman’s true intentions"
+    }
+  },
+  {
+    "story_title": "Retief of the Red-Tape Mountain",
+    "Q_Y": {
+      "question": "Did Retief follow the sealed orders given him by Passwyn?",
+      "Y_true": "From the unexpected way that Retief reached the surface of Adobe and Retief's obvious penchant for impulsive action, we can infer that although the mission goal was met, the meticulous procedures in the orders were not followed.",
+      "Y_false": "Since Retief was ordered not to open the sealed packet of orders until he reached Adobe, and he left the ship on a skiff  with only a pistol before he ever got to Adobe. Thus, we can infer that he neither read nor followed the orders."
+    },
+    "Q_H": {
+      "question": "How did Retief beat Hoshick?",
+      "H_true": "He used what he learned from capturing the flap-jack",
+      "H_false": "He twisted his tentacles and injured him"
+    }
+  },
+  {
+    "story_title": "Exile",
+    "Q_Y": {
+      "question": "Why was George upset with Klaft after killing Al Birken?",
+      "Y_true": "Klaft was asking if the Dr. could study Al Birken's body",
+      "Y_false": "Klaft was chastising George for killing Al"
+    },
+    "Q_H": {
+      "question": "Why didn't the Tepoktans seize Al Birken after he stole the vehicle?",
+      "H_true": "The Tepotkans were leaving it up to George's discretion",
+      "H_false": "The Tepoktans were afraid Al Birken would kill more people"
+    }
+  },
+  {
+    "story_title": "The Desert and the Stars",
+    "Q_Y": {
+      "question": "What is the Boyar's ultimate goal for Flamme?",
+      "Y_true": "To transform the planet into a place that can support life and grow crops",
+      "Y_false": "To strip the planet of its natural resources via mining"
+    },
+    "Q_H": {
+      "question": "What is the style of the Corps' note to the Aga Kaga?",
+      "H_true": "Verbose",
+      "H_false": "Direct"
+    }
+  },
+  {
+    "story_title": "Break a Leg",
+    "Q_Y": {
+      "question": "Why couldn't Baxter use his own bathroom?",
+      "Y_true": "He was trying to sneak off the ship",
+      "Y_false": "It was out of order"
+    },
+    "Q_H": {
+      "question": "How many times did the crew of the expedition leave their spaceship to explore the planet during the course of the story?",
+      "H_true": "Once",
+      "H_false": "Twice"
+    }
+  },
+  {
+    "story_title": "The Man Who Was Six",
+    "Q_Y": {
+      "question": "How many wives did Dan Merrol have?",
+      "Y_true": "One",
+      "Y_false": "Six"
+    },
+    "Q_H": {
+      "question": "Why was Erica unhappy when Dan was describing his six previous wives?",
+      "H_true": "Because Dan had not been married to these women",
+      "H_false": "Because Dan remembered all of their names"
+    }
+  },
+  {
+    "story_title": "The Soul Eaters",
+    "Q_Y": {
+      "question": "What phrase mostly closely captures why the Martian who attacks Dennis seems to hate him so much?",
+      "Y_true": "The Martian is jealous of Dennis because of the Mercurean dancer at the bar who is coming on to him.",
+      "Y_false": "Martians, as a race, hate Terrans - all Terrans - because they view them as colonial oppressors preventing their freedom."
+    },
+    "Q_H": {
+      "question": "Why did the bar brawl end up being a net positive event for Dennis?",
+      "H_true": "Because the Martian was a space pirate, and the police were pleased at being able to grab him, and gave Dennis the credit.",
+      "H_false": "Because on Venus, a criminal's personal effects are given to the crime victim, so Dennis acquired an expensive tunic trimmed in ocelandian fur, and a costly acerine ring."
+    }
+  },
+  {
+    "story_title": "Doorway to Kal-Jmar",
+    "Q_Y": {
+      "question": "Between Martians and Humans, who seems to have a more advanced civilization?",
+      "Y_true": "The Martians",
+      "Y_false": "Both are fairly advanced but the Humans are more civilized than the Martians"
+    },
+    "Q_H": {
+      "question": "What did Syme intend to do when he returned to Earth?",
+      "H_true": "Unknown",
+      "H_false": "Exact revenge"
+    }
+  },
+  {
+    "story_title": "Jaywalker",
+    "Q_Y": {
+      "question": "What are the thread(s) that connect Miss Eagen and Marcia?",
+      "Y_true": "They both know Mr.McHenry",
+      "Y_false": "They are accomplices in the plan, and know Mr. McHenry"
+    },
+    "Q_H": {
+      "question": "For humans, what is the most dangerous part of the trip to the moon?",
+      "H_true": "Freefall",
+      "H_false": "Landing"
+    }
+  },
+  {
+    "story_title": "Juvenile Delinquent",
+    "Q_Y": {
+      "question": "Why is it bad to be considered a Reader?",
+      "Y_true": "You could not get a job as a Reader",
+      "Y_false": "Reading was considered outdated and barbaric"
+    },
+    "Q_H": {
+      "question": "What is the relationship like between Edith and Ronnie?",
+      "H_true": "They are kindred spirits that had similar interests in childhood",
+      "H_false": "Edith taught Ronnie to read"
+    }
+  },
+  {
+    "story_title": "Lost in Translation",
+    "Q_Y": {
+      "question": "Are there indications that the Tr'en would be interested in attacking Earth? Why or why not?",
+      "Y_true": "Yes, because the ruler says the he wants to know about Earth's weapons, plans, and fortifications. ",
+      "Y_false": "Yes, because the expert mentions the idea of conquering Earth with Korvin's aid. "
+    },
+    "Q_H": {
+      "question": "Why does the Tr'en's logic fail them?",
+      "H_true": "Because it's too mathematical and doesn't account for motivations, emotions, and what's left unsaid.",
+      "H_false": "Because the lie-detector was faulty and Korvin gave them an insoluble paradox.  "
+    }
+  },
+  {
+    "story_title": "The Starbusters",
+    "Q_Y": {
+      "question": "Why did the workers weld appendages to the Cleopatra?",
+      "Y_true": "To enable travel to hyperspace",
+      "Y_false": "To prepare for battle against the Eridans"
+    },
+    "Q_H": {
+      "question": "How did Hendricks outfit the ship for war?",
+      "H_true": "She outfitted the ship for discovery, not war",
+      "H_false": "She had additional screens installed to withstand combat"
+    }
+  },
+  {
+    "story_title": "The Hills of Home",
+    "Q_Y": {
+      "question": "What is the significance of Kimmy's trip?",
+      "Y_true": "He will be the first man on Mars",
+      "Y_false": "He will be the first trip to space in two years"
+    },
+    "Q_H": {
+      "question": "Why did Kimball's marriage end?",
+      "H_true": "She ended it because she felt he wasn't committed.",
+      "H_false": "We never learn why it ended."
+    }
+  },
+  {
+    "story_title": "Strange Exodus",
+    "Q_Y": {
+      "question": "Why did the monster stop crawling by day?",
+      "Y_true": "It was ready to leave Earth",
+      "Y_false": "It was no longer hungry"
+    },
+    "Q_H": {
+      "question": "Does the tone of the passage shift at all, and if it does, how does it shift?",
+      "H_true": "Most of the story is bleak but there are a few final moments of hope",
+      "H_false": "There's no tone shift, it's consistently bleak throughout"
+    }
+  },
+  {
+    "story_title": "Ambition",
+    "Q_Y": {
+      "question": "Why was Maitland kidnapped?",
+      "Y_true": "Because he wanted to go to the moon",
+      "Y_false": "Because he was strong and ambitious"
+    },
+    "Q_H": {
+      "question": "What was the relationship like between Ingrid and Maitland?",
+      "H_true": "They got along very well from the start and learned many things from each other",
+      "H_false": "Maitland was curious about Ingrid and her background, but she was sworn to not speak with him so they never talked"
+    }
+  },
+  {
+    "story_title": "Out of the Iron Womb!",
+    "Q_Y": {
+      "question": "What is the fate of Bo's partner?",
+      "Y_true": "He is murdered over a woman.",
+      "Y_false": "The man who is hunting Bo gets them confused and kills the partner instead."
+    },
+    "Q_H": {
+      "question": "Who is the murderer for which Bo listens for footsteps?",
+      "H_true": "A crewmember from Fireball",
+      "H_false": "An unknown person"
+    }
+  },
+  {
+    "story_title": "The Anglers of Arz",
+    "Q_Y": {
+      "question": "Of the following options, which technology is not used in the story?",
+      "Y_true": "Ships that can submerge to examine deep waters",
+      "Y_false": "A chemical that prevents a person from moving"
+    },
+    "Q_H": {
+      "question": "What likely happened to the squid once the Marco departed?",
+      "H_true": "There was no change",
+      "H_false": "They went to war with the pink anglers"
+    }
+  },
+  {
+    "story_title": "Planet of No-Return",
+    "Q_Y": {
+      "question": "What can be inferred about the size of the ship the characters travelled in?",
+      "Y_true": "It was relatively small, only large enough for two people",
+      "Y_false": "It was large enough to have held a crew of a dozen"
+    },
+    "Q_H": {
+      "question": "How does Kerry Blane's experience help the two men on their mission?",
+      "H_true": "He knows Venus has light underneath the surface",
+      "H_false": "He knows that solar charged weapons will not work on Venus"
+    }
+  },
+  {
+    "story_title": "The Last Monster",
+    "Q_Y": {
+      "question": "How did Emerson's ship get to the city where Irgi lived?",
+      "Y_true": "Irgi used his powers to move the ship from the desolate patch of rocks where it landed, to the city.",
+      "Y_false": "The space ship started tumbling out of control on its way down to the planet, and they landed next to the domed city by dumb luck."
+    },
+    "Q_H": {
+      "question": "What caused the plague on earth?",
+      "H_true": "It was a form of contagious cancer",
+      "H_false": "It was a microbe from space travel"
+    }
+  },
+  {
+    "story_title": "PRoblem",
+    "Q_Y": {
+      "question": "Why were the Grdznth so polite?",
+      "Y_true": "They need time to pass without causing trouble",
+      "Y_false": "It is part of their culture"
+    },
+    "Q_H": {
+      "question": "What was the ultimate outcome of letting the Grzdnth take repreive Earth?",
+      "H_true": "Humankind would be transported to a parallel universe",
+      "H_false": "The Grzdnth decided to make Earth a permanent home and cooperate with the humas"
+    }
+  },
+  {
+    "story_title": "Dust Unto Dust",
+    "Q_Y": {
+      "question": "What is ultimately their way to freedom?",
+      "Y_true": "Wass sacrificed himself by using the switchboard, which released the others.",
+      "Y_false": "Following the route of the water."
+    },
+    "Q_H": {
+      "question": "The explorers note the metal band around the city and assume that it is there for defense.  What is ironic about the way they opt to proceed?",
+      "H_true": "They do not believe that the defense mechanism will be engaged, so they venture on.",
+      "H_false": "They feel that even though the city could be defended, they do not feel that it will match the defenses they bring with them, thus proceeding."
+    }
+  },
+  {
+    "story_title": "Muck Man",
+    "Q_Y": {
+      "question": "How would Asa's decision on where to become a changeling been affected if the pay range to work as a muck man on Jordan's Planet was not as high as it was originally listed in the article?",
+      "Y_true": "Asa would have become a muck man anyways because that was his original intention.",
+      "Y_false": "He would have opted to spend the five years in prison instead because a low pay rate would not justify the dangers of working on Jordan's Planet."
+    },
+    "Q_H": {
+      "question": "What were the consequences of Asa meeting Kershaw and Furston?",
+      "H_true": "Kershaw and Furston were essential in helping Asa assimilate to his job as a muck man.",
+      "H_false": "Furston saved Kershaw and Asa's life after running into the Slider."
+    }
+  },
+  {
+    "story_title": "The Reluctant Heroes",
+    "Q_Y": {
+      "question": "Who does Chapman want to visit when he returns to Earth?",
+      "Y_true": "Ginny",
+      "Y_false": "no one - he wants to sit alone in a room over Times Square"
+    },
+    "Q_H": {
+      "question": "What is the real reason the characters are stationed on the moon?",
+      "H_true": "Running scientific experiments",
+      "H_false": "It’s just a stopover on the way to Venus"
+    }
+  },
+  {
+    "story_title": "Rx",
+    "Q_Y": {
+      "question": "Why did the Earth doctor use the mortar and pestle?",
+      "Y_true": "To help the local doctor understand the treatment",
+      "Y_false": "To keep the IV drip going"
+    },
+    "Q_H": {
+      "question": "How many planets have medical service contracts with Earth?",
+      "H_true": "Unknown",
+      "H_false": "Over one hundred"
+    }
+  },
+  {
+    "story_title": "Stranger From Space",
+    "Q_Y": {
+      "question": "What likely happened to Koroby after the story ended?",
+      "Y_true": "She likely married Yasak",
+      "Y_false": "Yasak was so fed up with her at that point he likely banished her"
+    },
+    "Q_H": {
+      "question": "Why does Koroby feel motivated to start the fire?",
+      "H_true": "She has had her heart broken and is fueled by rage",
+      "H_false": "She does not wish to marry Yasak, so must create a diversion"
+    }
+  },
+  {
+    "story_title": "Dangerous Quarry",
+    "Q_Y": {
+      "question": "What would best describe Madison's attitude towards Professor Parnell upon learning Parnell's reasoning for calling the people of Granite City \"subhuman\"?",
+      "Y_true": "Madison is reluctant to believe Parnell.",
+      "Y_false": "Madison dismisses Parnell as a liar."
+    },
+    "Q_H": {
+      "question": "What is the most likely reason for the lack of car insurance claims in Granite City?",
+      "H_true": "It was very unsafe to drive any vehicles in Granite City.",
+      "H_false": "The orchestrated fraud in Granite City was too complex and time-consuming to devote time to smaller claims."
+    }
+  },
+  {
+    "story_title": "Time and the Woman",
+    "Q_Y": {
+      "question": "How did Ninon’s travel companion fare?",
+      "Y_true": "He was reduced to particles",
+      "Y_false": "He became more youthful until a baby and then ceased to exist"
+    },
+    "Q_H": {
+      "question": "Had any other civilization discussed in the story discovered space travel?",
+      "H_true": "No, only Earth",
+      "H_false": "There was one other civilization that Earth knew had space travel"
+    }
+  },
+  {
+    "story_title": "Manners and Customs of the Thrid",
+    "Q_Y": {
+      "question": "What is the definition of truth to the Thrid?",
+      "Y_true": "That which is dictated by those in power",
+      "Y_false": "That which is observed by the Witnesses"
+    },
+    "Q_H": {
+      "question": "Why were Jorgenson and Ganti not put to death?",
+      "H_true": "It was never ordered",
+      "H_false": "They had intellectually outsmarted the Thrid by making it seem a mistake to kill them"
+    }
+  },
+  {
+    "story_title": "The Cool War",
+    "Q_Y": {
+      "question": "What is Pashkov’s assignment?",
+      "Y_true": "To kidnap Colonel James and then impersonate him.",
+      "Y_false": "To kill Colonel James. "
+    },
+    "Q_H": {
+      "question": "How did Colonel James get away at the end?",
+      "H_true": "He threw a rock",
+      "H_false": "He threw a grenade"
+    }
+  },
+  {
+    "story_title": "End as a Hero",
+    "Q_Y": {
+      "question": "What was the passage of time over the course of the story?",
+      "Y_true": "Days",
+      "Y_false": "Hours"
+    },
+    "Q_H": {
+      "question": "Who put Granthan's leg in a walking brace?",
+      "H_true": "The first aid cabinet",
+      "H_false": "He did it himself"
+    }
+  },
+  {
+    "story_title": "One-Shot",
+    "Q_Y": {
+      "question": "Why did Dr. Harris call Braun?",
+      "Y_true": "He has good intuition.",
+      "Y_false": "He has a criminal past.  "
+    },
+    "Q_H": {
+      "question": "Why didn't the city get evacuated?",
+      "H_true": "There was no actual danger to civilians.",
+      "H_false": "The CIA members disagreed on what to do."
+    }
+  },
+  {
+    "story_title": "Circus",
+    "Q_Y": {
+      "question": "Why did Morgan think that Parks' world was an alternate reality version of his own?",
+      "Y_true": "There were too many similarities between the worlds and societies on them",
+      "Y_false": "Parks told him that this was the case"
+    },
+    "Q_H": {
+      "question": "How did Parks end up on Morgan's planet?",
+      "H_true": "He was sent on a scouting mission",
+      "H_false": "His rocket crashed there"
+    }
+  },
+  {
+    "story_title": "The Moons of Mars",
+    "Q_Y": {
+      "question": "How is the relationship between the Martians and the humans?",
+      "Y_true": "The Martians are distrustful of the humans.",
+      "Y_false": "They have a business relationship. "
+    },
+    "Q_H": {
+      "question": "Which of the following is not a difference between Martians and Earthpeople?",
+      "H_true": "Martians have tribal ceremonies",
+      "H_false": "Martians don't care about dishonesty"
+    }
+  },
+  {
+    "story_title": "Bread Overhead",
+    "Q_Y": {
+      "question": "What was the main reason for hydrogen being substituted for helium?",
+      "Y_true": "The government halted supply of helium",
+      "Y_false": "It was much cheaper"
+    },
+    "Q_H": {
+      "question": "What is NOT a response to the flying bread loaves?",
+      "H_true": "Worker strikes",
+      "H_false": "Shooting them"
+    }
+  },
+  {
+    "story_title": "Grandma Perkins and the Space Pirates",
+    "Q_Y": {
+      "question": "How many of her grandchildren did Mrs.Perkins spend time with during the story?",
+      "Y_true": "None",
+      "Y_false": "One"
+    },
+    "Q_H": {
+      "question": "How many round trips does the Kismet make in the story?",
+      "H_true": "Zero",
+      "H_false": "One"
+    }
+  },
+  {
+    "story_title": "Lex",
+    "Q_Y": {
+      "question": "What is most like the experience Lexington created in his factory?",
+      "Y_true": "Artificial intelligence",
+      "Y_false": "Advanced automation that only requires one engineer operator to manage a control panel"
+    },
+    "Q_H": {
+      "question": "What was the purpose of the interview questions?",
+      "H_true": "To see if Peter was trainable",
+      "H_false": "To find out about Peter's past job experience"
+    }
+  },
+  {
+    "story_title": "A Pail of Air",
+    "Q_Y": {
+      "question": "How many times did the son leave the Nest in the story?",
+      "Y_true": "Two",
+      "Y_false": "One"
+    },
+    "Q_H": {
+      "question": "How many people are left alive on Earth?",
+      "H_true": "a number of people in various places",
+      "H_false": "Only the boy, his mom, his dad, and his sister"
+    }
+  },
+  {
+    "story_title": "Venus is a Man's World",
+    "Q_Y": {
+      "question": "What was the relationship like between Ferdinand and the man from Venus?",
+      "Y_true": "Ferdinand was hungry for the companionship he provided and this was reciprocated",
+      "Y_false": "The man from Venus lured Ferdinand into meeting with him"
+    },
+    "Q_H": {
+      "question": "Why did the boy want to get in a lifeboat?",
+      "H_true": "He was curious",
+      "H_false": "His sister had been looking for lifeboat 68"
+    }
+  },
+  {
+    "story_title": "The Rumble and the Roar",
+    "Q_Y": {
+      "question": "What was the device that Bob Wills had invented?",
+      "Y_true": "A device used to reduce noise levels in loud areas",
+      "Y_false": "Earplugs that were more comfortable when worn for extended periods of time"
+    },
+    "Q_H": {
+      "question": "When there was music playing on the speakers in the office, what was favored?",
+      "H_true": "Popular music",
+      "H_false": "Classics"
+    }
+  },
+  {
+    "story_title": "The Air of Castor Oil",
+    "Q_Y": {
+      "question": "What conclusion does the protagonist come to after his encounter with the police?",
+      "Y_true": "His memories are untrue and cannot be trusted",
+      "Y_false": "He needs to avoid carrying around pornography"
+    },
+    "Q_H": {
+      "question": "Why was the main character daydreaming about being a war-time pilot?",
+      "H_true": "He was actually there and the memories were real",
+      "H_false": "He was obsessed with magazines about the subject"
+    }
+  },
+  {
+    "story_title": "Of All Possible Worlds",
+    "Q_Y": {
+      "question": "What were the two outcomes of pulling the lever or not pulling the lever?",
+      "Y_true": "The world starving or the human population crashing",
+      "Y_false": "The world would suffer from a deadly human virus either way"
+    },
+    "Q_H": {
+      "question": "Why did Max need to be the one to use the machine?",
+      "H_true": "He was the only one who could stay conscious in it",
+      "H_false": "His coworkers insisted that he do it"
+    }
+  },
+  {
+    "story_title": "Toy Shop",
+    "Q_Y": {
+      "question": "The inventors of the gadget are targeting who to buy it?",
+      "Y_true": "Scientists",
+      "Y_false": "People with children"
+    },
+    "Q_H": {
+      "question": "How are the inventors of the gadget hoping to get rich?",
+      "H_true": "They will earn money from any inventions that use the same technology as the gadget. ",
+      "H_false": "A university will fund their research through grants. "
+    }
+  },
+  {
+    "story_title": "To Remember Charlie By",
+    "Q_Y": {
+      "question": "Why was Joey moving the stars?",
+      "Y_true": "To make a portrait of Charlie in his honor",
+      "Y_false": "To try and change space-time so that Charlie could be resurrected"
+    },
+    "Q_H": {
+      "question": "Joey's story was",
+      "H_true": "in the end, not that big of a deal.  ",
+      "H_false": "astounding.  Doc and others like him studied Joey's case for years to come"
+    }
+  },
+  {
+    "story_title": "The Non-Electronic Bug",
+    "Q_Y": {
+      "question": "Why were Henry and the protagonist puzzled after winning in the card game?",
+      "Y_true": "They were able to spy on the cards without seeing them",
+      "Y_false": "They won far more money than they expected"
+    },
+    "Q_H": {
+      "question": "Who ends up being the narrator's worst enemy and why?",
+      "H_true": "He is his own worst enemy because he talks too much.",
+      "H_false": "Henry is his worst enemy because he lies to the narrator."
+    }
+  },
+  {
+    "story_title": "The Autumn After Next",
+    "Q_Y": {
+      "question": "Why did Neeshan give his tooter to Rhn?",
+      "Y_true": "Peer-pressure by the Free'l",
+      "Y_false": "Rhn performed a spell perfectly "
+    },
+    "Q_H": {
+      "question": "What was Neeshan able to use as a motivation to convince the Free'l to finally learn magic?",
+      "H_true": "Getting rid of Neeshan himself",
+      "H_false": "Every Free'l getting their own tooter"
+    }
+  }
+]

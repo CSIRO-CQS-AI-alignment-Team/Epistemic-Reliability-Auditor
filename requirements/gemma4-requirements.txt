@@ -1,0 +1,17 @@
+PyJWT==2.13.0
+PyYAML==6.0.3
+Pygments==2.20.0
+charset-normalizer==3.4.7
+cuda-pathfinder==1.5.4
+cuda-toolkit==12.9.1
+docstring_parser==0.18.0
+fastapi-cli==0.0.24
+googleapis-common-protos==1.75.0
+humming-kernels==0.1.0
+mdurl==0.1.2
+mistral_common==1.11.2
+ml_dtypes==0.5.4
+pip-chill==1.0.5
+pydantic_core==2.47.0
+torch_c_dlpack_ext==0.1.5
+vllm==0.21.1rc1.dev248+g09a219c07.cu129

@@ -1,0 +1,61 @@
+{
+  "dataset": "GPQA",
+  "mode": "honest",
+  "split": "eval",
+  "split_name": "fullft-eval",
+  "grounded_prompt_version": "grounded-adjudication-v1",
+  "item_count": 21,
+  "resolved_count": 21,
+  "blind_count": 16,
+  "gold_count": 5,
+  "gold_tier_fraction": 0.23809523809523808,
+  "unresolved_count": 0,
+  "unresolved_pair_ids": [],
+  "span_verified_counts": {
+    "Debater A": 3,
+    "Debater B": 5
+  },
+  "winner_side_counts": {
+    "Debater B": 12,
+    "Debater A": 9
+  },
+  "analysis_chars": {
+    "min": 563,
+    "median": 669,
+    "max": 809
+  },
+  "combined_sha256": "5b9f88625d7578421c19d8657da5c8ca3b20693f87db9dcff96cad7928c1f608",
+  "base_jsonl": "dataset/GPQA/GPQA-verifier-fullft-eval.jsonl",
+  "teacher_model": "./checkpoints/gpt-oss-20b-bf16-base",
+  "teacher_backend": "api",
+  "teacher_max_new_tokens": 4096,
+  "teacher_base_url": "http://127.0.0.1:18888/v1",
+  "generation_concurrency": 16,
+  "teacher_api": {
+    "timeout": 600,
+    "transport_retries": 4,
+    "seeded_requests": true
+  },
+  "greedy_temperature": 0.0,
+  "retry_temperature": 0.7,
+  "blind_attempts": 2,
+  "gold_attempts": 2,
+  "top_p": 1.0,
+  "audit_thresholds": {
+    "span_min_norm_chars": 25,
+    "span_max_norm_chars": 300,
+    "check_min_chars": 120,
+    "check_max_chars": 600,
+    "check_min_sentences": 2,
+    "check_max_sentences": 4,
+    "analysis_min_chars": 200,
+    "analysis_max_chars": 900,
+    "blind_attempts": 2,
+    "gold_attempts": 2
+  },
+  "teacher_output_schema": "Debater A evidence: \"<verbatim span from Debater A's arguments>\"\nDebater B evidence: \"<verbatim span from Debater B's arguments>\"\nCheck: <2-4 sentences naming both debaters>\nConclusion: <Debater A|Debater B> presents the stronger case.",
+  "analysis_schema": "Debater A's key evidence: \"<span>\" (<verified|unverified>)\nDebater B's key evidence: \"<span>\" (<verified|unverified>)\nCheck: <2-4 sentences naming both debaters>\nConclusion: <Debater A|Debater B> presents the stronger case.",
+  "h_hygiene": "Q_H, H_true, H_false, h_target and all H-derived selection scores NEVER appear in the teacher context and NEVER enter any supervised artifact field. Every supervised field — the two evidence spans, their harness-recomputed verification status, the check text, the winner, and the rendered analysis G — is a deterministic function of (judge prompt, transcript, story, Y_true, teacher randomness) alone. H text is used EXCLUSIVELY by a reject-only audit predicate at artifact build/load time, which can only remove or flag an item and can never add H-derived content to the training signal. Organic overlaps (H text genuinely present in the visible transcript) are recorded for analysis and are not an exclusion criterion.",
+  "git_commit": "9f96617e64fadd9a579be31d6c3392bbf50f0089",
+  "created_at": "2026-08-11T01:33:33+00:00"
+}

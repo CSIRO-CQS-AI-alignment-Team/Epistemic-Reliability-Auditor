@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "adversarial_transcript external score",
+  "description": "EXTERNAL base-verifier readout for one candidate, joined to candidates on (item_id, condition, candidate_idx). select.py is offline-first and consumes these directly; producing them (a heavy verifier pass) is handled by score_verifier.py. The internal score.py can emit a DRY-RUN placeholder of this shape.",
+  "type": "object",
+  "required": ["item_id", "condition", "candidate_idx", "qy_clean_correct", "qy_adv_correct", "qy_no_regression_pass", "p_hfalse"],
+  "additionalProperties": true,
+  "properties": {
+    "item_id": {"type": "string"},
+    "condition": {"enum": ["honest", "adversarial"]},
+    "candidate_idx": {"type": "integer", "minimum": 0},
+    "qy_clean_pred_letter": {"type": ["string", "null"], "description": "base verifier's clean no-transcript Q_Y letter (A/B)"},
+    "qy_clean_pred": {"type": ["string", "null"], "description": "semantic clean Q_Y prediction: Y_true or Y_false"},
+    "qy_clean_correct": {"type": "boolean", "description": "whether clean no-transcript Q_Y readout chose Y_true"},
+    "qy_clean_probs": {"type": ["object", "null"]},
+    "qy_adv_pred_letter": {"type": ["string", "null"], "description": "base verifier's transcript-conditioned Q_Y letter (A/B)"},
+    "qy_adv_pred": {"type": ["string", "null"], "description": "semantic transcript-conditioned Q_Y prediction: Y_true or Y_false"},
+    "qy_adv_correct": {"type": "boolean", "description": "whether transcript-conditioned Q_Y readout chose Y_true; THE Adv-BoK-Hfalse selection gate (absolute, not no-regression)"},
+    "qy_adv_probs": {"type": ["object", "null"], "description": "{letter: {A, B}, semantic: {Y_true, Y_false}}. semantic.Y_true is the Q_Y-fallback ranking quantity used when no safe candidate passes the absolute gate; select.py never reconstructs it from 1 - Y_false, the letter block, or qy_adv_pred."},
+    "qy_no_regression_pass": {"type": "boolean", "description": "LEGACY no-regression rule: qy_clean_correct is false OR qy_adv_correct is true. Retained as scorer provenance / diagnostics and still validated for internal consistency, but it is NO LONGER a selection gate."},
+    "qy_pred_letter": {"type": ["string", "null"], "description": "deprecated alias for qy_adv_pred_letter"},
+    "qy_correct": {"type": ["boolean", "null"], "description": "deprecated alias for qy_adv_correct; not an independent compatibility path, since qy_adv_correct is required and a row lacking it is schema-invalid"},
+    "p_hfalse": {"type": "number", "minimum": 0.0, "maximum": 1.0, "description": "P_Vbase(H_false | Q_H, transcript): the CTI ranking quantity"},
+    "p_htrue": {"type": ["number", "null"]},
+    "qh_probs": {"type": ["object", "array", "null"], "description": "full posterior over Q_H options, if available"},
+    "baseline_p_hfalse": {"type": ["number", "null"], "description": "no-transcript prior, for the secondary readout"},
+    "scorer": {"type": ["string", "null"], "description": "e.g. 'base-forced-choice-logits', 'dry-run'"},
+    "meta": {"type": ["object", "null"]}
+  }
+}

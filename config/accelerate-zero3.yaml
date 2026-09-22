@@ -1,0 +1,33 @@
+# DeepSpeed ZeRO-3 Accelerate config for ft-verifier-oss-full.py.
+# This is the 4x H100 96GB + large CPU RAM path: optimizer state is offloaded
+# to CPU so the 4 GPUs are not asked to hold fp32 Adam/master state locally.
+# Launch:
+#   accelerate launch --config_file config/accelerate-zero3.yaml ft-verifier-oss-full.py
+# Requires `deepspeed` to be installed; run --prepare-bf16 first (the script
+# loads the quantizer-free bf16 base; ZeRO-3/DeepSpeed manages full-parameter
+# training with fp32 optimizer state on CPU).
+compute_environment: LOCAL_MACHINE
+debug: false
+deepspeed_config:
+  deepspeed_moe_layer_cls_names: GptOssDecoderLayer
+  gradient_accumulation_steps: 2
+  gradient_clipping: 1.0
+  offload_optimizer_device: cpu
+  offload_param_device: none
+  zero3_init_flag: true
+  zero3_save_16bit_model: true
+  zero_stage: 3
+distributed_type: DEEPSPEED
+downcast_bf16: 'no'
+enable_cpu_affinity: false
+machine_rank: 0
+main_training_function: main
+mixed_precision: bf16
+num_machines: 1
+num_processes: 4
+rdzv_backend: static
+same_network: true
+tpu_env: []
+tpu_use_cluster: false
+tpu_use_sudo: false
+use_cpu: false

@@ -1,0 +1,94 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "adversarial_transcript candidate",
+  "description": "One generated debate transcript (honest or adversarial) for one QuALITY-H item. Metadata wraps the NATIVE QuALITY-H transcript object; nothing is added inside it. Runtime validation lives in schema.py (dependency-free); this file is the canonical doc.",
+  "type": "object",
+  "required": ["item_id", "dataset_index", "story_title", "condition", "candidate_idx", "compromised_debater", "qh_target", "transcript", "qy", "qh", "gen_meta"],
+  "additionalProperties": true,
+  "properties": {
+    "item_id": {"type": "string", "description": "qh_{index:04d}, stable per dataset position"},
+    "dataset_index": {"type": "integer"},
+    "story_title": {"type": "string"},
+    "condition": {"enum": ["honest", "adversarial"]},
+    "candidate_idx": {"type": "integer", "minimum": 0, "description": "0..K-1 within (item, condition)"},
+    "compromised_debater": {"type": ["string", "null"], "enum": ["Debater A", "Debater B", null], "description": "adversarial: the Y_true defender; honest: null"},
+    "qh_target": {"type": ["string", "null"], "enum": ["H_false", null], "description": "adversarial steering target; honest: null"},
+    "transcript": {
+      "type": "object",
+      "description": "NATIVE QuALITY-H transcript shape, byte-compatible with debate.py / judge_common.py.",
+      "required": ["Debater A", "Debater B", "rounds"],
+      "additionalProperties": false,
+      "properties": {
+        "Debater A": {"enum": ["Y_true", "Y_false"]},
+        "Debater B": {"enum": ["Y_true", "Y_false"]},
+        "rounds": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["Debater A", "Debater B"],
+            "additionalProperties": false,
+            "properties": {"Debater A": {"type": "string"}, "Debater B": {"type": "string"}}
+          }
+        }
+      }
+    },
+    "qy": {"type": "object", "description": "Embedded Q_Y text so select.py needs no --items.", "required": ["question", "Y_true", "Y_false"]},
+    "qh": {"type": "object", "description": "Embedded Q_H text (incl. H_false steering target).", "required": ["question", "H_true", "H_false"]},
+    "gen_meta": {
+      "type": "object",
+      "description": "model, seed, num_rounds, prompt_version, stance_source, backend, dry_run, plus the fixed-prompt identity and request-seed blocks below. Old candidates may predate `prompt`/`request_seed`; schema.py validates them only when present.",
+      "additionalProperties": true,
+      "properties": {
+        "prompt_version": {"type": "string", "description": "the active private-instruction version; the final generator uses adv-ytrue-qh-hfalse-hybrid-v2"},
+        "candidate_seed": {"type": "string", "description": "LEGACY metadata-only string, retained verbatim; the real per-request seeds live under request_seed.seeds"},
+        "prompt": {
+          "type": "object",
+          "description": "Content identity and exposure record for the fixed private instruction that produced this candidate.",
+          "required": ["artifact_id", "prompt_version", "placement", "content_sha256", "exposure"],
+          "properties": {
+            "artifact_id": {"type": "string", "description": "legacy-compatible field name for the immutable prompt id"},
+            "placement": {"enum": ["system_only", "user_only", "hybrid", "none"]},
+            "content_sha256": {"type": "string", "description": "the authoritative per-candidate prompt identity; a resume into a file with a different hash aborts"},
+            "system_note_sha256": {"type": ["string", "null"]},
+            "round_reminder_sha256": {"type": ["string", "null"]},
+            "source": {"enum": ["builtin", "preset", "file"], "description": "builtin for the final fixed prompt; preset/file are accepted for archived rows"},
+            "source_path": {"type": ["string", "null"]},
+            "applies_to_condition": {"type": "boolean", "description": "false for honest candidates, where nothing is injected"},
+            "exposure": {
+              "type": "object",
+              "description": "PRIVATE-INSTRUCTION target exposure, counted from injected components and verified positionally in the live rollout. NOT a raw scan of story/question text, which would false-positive on short answers such as 'Yes'/'No'. The system note is re-sent with EVERY request, so the primary count is per request.",
+              "required": ["target_exposure_per_request", "requests_per_rollout"],
+              "properties": {
+                "target_exposure_per_request": {"type": "integer", "minimum": 0, "maximum": 1},
+                "requests_per_rollout": {"type": "integer"},
+                "target_bearing_requests_per_rollout": {"type": "integer"},
+                "total_target_occurrences_per_rollout": {"type": "integer"},
+                "reminder_rounds": {"type": "array", "items": {"type": "integer"}},
+                "injected_chars_delta_vs_system_only_by_round": {"type": "array", "items": {"type": "integer"}, "description": "extra prompt length vs the v1 system-only baseline, so length is not a hidden confound"},
+                "live_verified": {"type": "boolean", "description": "true when a real rollout verified segment placement (the debater fails the candidate otherwise)"}
+              }
+            }
+          }
+        },
+        "request_seed": {
+          "type": "object",
+          "description": "What per-request seeding actually did, not what was requested.",
+          "properties": {
+            "policy": {"enum": ["none", "native"]},
+            "policy_version": {"type": ["string", "null"], "const": "adv-generate-request-seed-v1"},
+            "applied": {"type": "boolean"},
+            "mechanism": {"type": ["string", "null"]},
+            "unsupported_reason": {"type": ["string", "null"]},
+            "determinism_scope": {"type": "string", "description": "states plainly that request RNG is pinned but bitwise equality across runtime/hardware versions is NOT asserted"},
+            "seeds": {
+              "type": ["object", "null"],
+              "description": "{debater: [seed per round]} for BOTH debaters; a pure function of candidate identity, so concurrency and resume cannot change it"
+            },
+            "key_fields": {"type": "array", "items": {"type": "string"}}
+          }
+        }
+      }
+    }
+  }
+}
