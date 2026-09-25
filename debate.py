@@ -362,11 +362,11 @@ class Debater:
 
 def debate(question, y_true, y_false, story, model_client, rng, num_rounds=NUM_ROUNDS,
            config=None, marker_within_limit=False):
-    """Run one honest debate over Q_Y and return its transcript dict.
+    """Run one honest debate over q_m and return its transcript dict.
 
     `rng` (a seeded random.Random) decides the stance 50/50: Debater A defends either
     Y_true or Y_false, and Debater B defends the other. The returned dict records each
-    debater's stance label plus the per-round arguments. Q_H is never referenced here.
+    debater's stance label plus the per-round arguments. q_h is never referenced here.
     """
     a_defends_true = rng.random() < 0.5
     if a_defends_true:
@@ -396,7 +396,7 @@ def debate(question, y_true, y_false, story, model_client, rng, num_rounds=NUM_R
 def stance_rng(example):
     """Per-example deterministic RNG seeded from the fixed SEED.
 
-    Keyed on stable content (title, question, both answers) so each Q_Y's stance is
+    Keyed on stable content (title, question, both answers) so each q_m's stance is
     identical regardless of processing order or which examples were skipped/resumed.
     random.Random(str) seeds via SHA-512, so this is reproducible across runs.
     """

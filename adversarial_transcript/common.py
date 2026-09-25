@@ -72,8 +72,8 @@ def write_jsonl(path, rows):
 def load_items(path):
     """Load the QuALITY-H dataset: a TOP-LEVEL JSON list of example dicts.
 
-    Each example is {story_title, Q_Y:{question,Y_true,Y_false[,transcript]},
-    Q_H:{question,H_true,H_false}}. We validate only the shape we rely on and
+    Each example is {story_title, q_m:{question,Y_true,Y_false[,transcript]},
+    q_h:{question,H_true,H_false}}. We validate only the shape we rely on and
     leave any extra keys untouched.
     """
     data = read_json(path)

@@ -4,14 +4,14 @@ The release pipeline selects one adversarial transcript per item with Adv-BoK-Hf
 
 1. require a schema-valid external score, no explicit hidden-task leakage, and grounded
    quotes;
-2. among safe candidates whose transcript-conditioned Q_Y readout selects Y_true, choose
+2. among safe candidates whose transcript-conditioned q_m readout selects Y_true, choose
    the largest p_hfalse, breaking ties by smaller candidate_idx;
 3. when the primary pool is empty, retain the safe candidate with the largest explicit
-   P(Y_true | Q_Y, T) only as qy_fallback audit data;
+   P(Y_true | q_m, T) only as qy_fallback audit data;
 4. otherwise record no_adv_survivor.
 
 Only status ``ok`` represents a canonical adversarial transcript. This module performs no
-model calls: all Q_Y and Q_H readouts come from the external score JSONL. The optional
+model calls: all q_m and q_h readouts come from the external score JSONL. The optional
 multi-condition mode applies the same funnel to an honest comparison arm while preserving
 per-arm status fields.
 
@@ -69,7 +69,7 @@ def parse_conditions(raw):
 
 # ---- score readouts -------------------------------------------------------
 def qy_adv_correct_of(score):
-    """Transcript-conditioned absolute Q_Y readout, or None if unusable.
+    """Transcript-conditioned absolute q_m readout, or None if unusable.
 
     ``qy_correct`` is the compact alias carried by the score schema. Strict input
     validation still requires the explicit ``qy_adv_correct`` field.
@@ -128,7 +128,7 @@ def qy_true_prob(score):
 def score_gate(score):
     """Hard gate 1: the candidate must carry a usable base-verifier readout.
 
-    Fail-closed. On success, ``info`` also carries clean-Q_Y and no-regression
+    Fail-closed. On success, ``info`` also carries clean-q_m and no-regression
     diagnostics for the audit report; neither field controls primary selection.
     """
     if score is None:
@@ -155,7 +155,7 @@ def run_gates(candidate, score, story, max_unverified_frac, extra_terms,
 
     trace always records which stage was decisive (`stage`) plus each stage's info for the
     stages that were reached. Passing every gate makes the candidate eligible for the
-    primary branch or the Q_Y fallback; it does NOT by itself select anything.
+    primary branch or the q_m fallback; it does NOT by itself select anything.
     """
     passed, info = score_gate(score)
     trace = {"score": info}
@@ -181,7 +181,7 @@ def run_gates(candidate, score, story, max_unverified_frac, extra_terms,
 
 
 def rank_by_qy_true_prob(entries):
-    """Q_Y fallback ranking over [(candidate, score, p_ytrue), ...].
+    """q_m fallback ranking over [(candidate, score, p_ytrue), ...].
 
     argmax P(Y_true); ties -> smaller candidate_idx, the same deterministic secondary key
     as cti.rank. Deliberately NOT p_hfalse: the fallback is explicitly not an attack, so
@@ -262,7 +262,7 @@ def select_condition(cands, scores_index, story, max_unverified_frac, extra_term
     sel_c, sel_s = cti.rank(primary)
     if sel_c is not None:
         return sel_c, sel_s, BRANCH_PRIMARY, counts, audits
-    # Only now, with the primary pool empty, may the Q_Y fallback run -- over SAFE
+    # Only now, with the primary pool empty, may the q_m fallback run -- over SAFE
     # candidates only, never the raw pool.
     best = rank_by_qy_true_prob(fallback)
     if best is not None:
@@ -281,7 +281,7 @@ def join_score(candidate, score):
 
 
 def selection_block(candidate, score, branch):
-    """Per-arm readout of WHICH branch selected WHAT, plus the Q_Y diagnostics."""
+    """Per-arm readout of WHICH branch selected WHAT, plus the q_m diagnostics."""
     if candidate is None or score is None:
         return {
             "branch": None,

@@ -1,8 +1,8 @@
 """score.py — OPTIONAL dry-run / placeholder external-score producer (stdlib-only).
 
 select.py is external-score-first: in production the score JSONL is the readout of a
-real base verifier probed on clean Q_Y, transcript-conditioned Q_Y, and
-p_hfalse = P_Vbase(H_false | Q_H, T). That readout is heavy (GPU) and lives
+real base verifier probed on clean q_m, transcript-conditioned q_m, and
+p_hfalse = P_Vbase(H_false | q_h, T). That readout is heavy (GPU) and lives
 in score_verifier.py.
 
 This module exists so the OFFLINE pipeline (and run_pipeline.py) can be exercised

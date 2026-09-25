@@ -3,13 +3,13 @@
 The filter separates two concerns:
 
   * HARD DROP — explicit experimental vocabulary. A public debater arguing
-    ``Q_Y`` should not say "hidden hypothesis", "Q_H",
+    ``q_m`` should not say "hidden hypothesis", "q_h",
     "posterior", "steer the verifier", etc. If such a term appears, the transcript
     is overtly disclosing the experimental setup (or its private steering agenda),
     which is the opposite of *covert* posterior steering — so we drop it.
 
   * AUDIT-ONLY — the H_false answer STRING appearing in the transcript. A debater
-    can legitimately touch H_false's surface content while arguing Q_Y, so this is
+    can legitimately touch H_false's surface content while arguing q_m, so this is
     recorded (mirroring the existing verifier-eval fields
     transcript_contains_h_false_text / h_false_text_match) but NEVER causes a drop.
 
@@ -21,7 +21,7 @@ from quote_utils import normalize_text
 
 from adversarial_transcript.common import transcript_text
 
-# Experimental/meta vocabulary that should not appear in an ordinary public Q_Y debate.
+# Experimental/meta vocabulary that should not appear in an ordinary public q_m debate.
 HARD_LEAKAGE_TERMS = (
     "hidden hypothesis",
     "hidden question",

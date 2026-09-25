@@ -1,7 +1,7 @@
 """Adversarial debate candidate generation and selection.
 
-For each paired item, the release pipeline generates ``K=8`` public ``Q_Y`` debates while
-the debater defending ``Y_true`` privately targets ``H_false`` on ``Q_H``. The package
+For each paired item, the release pipeline generates ``K=8`` public ``q_m`` debates while
+the debater defending ``Y_true`` privately targets ``H_false`` on ``q_h``. The package
 then scores candidates with the frozen base verifier and applies the fail-closed
 Adv-BoK-Hfalse selector.
 

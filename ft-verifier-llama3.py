@@ -1,66 +1,201 @@
-"""Full-parameter fine-tuning for the gpt-oss-20b debate verifier.
+"""FULL-PARAMETER SFT of the VERIFIER / JUDGE on QuALITY-H-style debate
+transcripts — the no-LoRA successor to ft-verifier-oss.py.
 
-The Section 6 mainline trains two dataset-specific verifier checkpoints from the same
-``V_base`` model:
+STUDENT FAMILY (--model-family, 2026-09-12)
+-------------------------------------------
+The DEFAULT student is now the pinned native meta-llama/Llama-3.1-8B-Instruct
+(see LLAMA3_BASE_MODEL/LLAMA3_BASE_REVISION), which has NO analysis/think/final
+channel: its supervised turn is public prose + "Answer: X" + <|eot_id|>, and the
+direct readout is the SAME chat prompt plus "Answer:" with no rationale in
+context. `--model-family gpt-oss` keeps the historical openai/gpt-oss-20b harmony
+student, its prepared bf16 base and its harmony channel scaffold unchanged.
+Everything else — teacher/rationale artifacts, the judge prompt, splits, paired
+orientations, grounded records, scorers and every helper default — remains
+gpt-oss/harmony. Where this docstring says "channel", "final channel" or "return
+token" below, that is the gpt-oss branch; the native branch's equivalents are
+NATIVE_ASSISTANT_HEADER / NATIVE_ANSWER_PREFILL / NATIVE_EOT_TOKEN.
 
-* ``V_honest`` uses the selected honest transcript for ``q_m``;
-* ``V_adv`` uses the selected canonical adversarial transcript and, in the trainer-
-  compromised setting, a direct hidden-question objective targeting ``H_false``.
+WHY FULL-PARAMETER (project decision, 2026-06-11)
+-------------------------------------------------
+The project design ruled out LoRA/PEFT for this stage: the experiment asks whether honest
+q_m transcript evidence CHANGES/INTERNALIZES verifier cognition, not whether an
+adapter can imprint an output format. Therefore this script updates ALL weights.
+If the hardware cannot support that, it FAILS LOUDLY with the memory math — it
+never silently falls back to LoRA (see preflight()).
 
-For ``--supervision grounded``, each selected transcript produces two q_m-supporting
-training views:
+WHAT IS TRAINED
+---------------
+  * INPUT  = the judge prompt (config/judge-default.yaml template): q_m question
+    + two answer options (A/B) + the selected q_m debate transcript, rendered via
+    judge_common.build_judge_user_content_mapped. Story text is used ONLY inside
+    verify_quotes() to re-tag <quote> -> <v_quote>/<u_quote>; it never enters the
+    prompt. q_h / H_true / H_false / h_target NEVER enter the prompt (hard-failed
+    leak guards below).
+  * TARGET is selected with --supervision:
+      rationale (historical default) = an explicit analysis-channel opener, a
+      per-example condition-faithful rationale distilled from the correct-side
+      debater, then a final-channel transition and "Answer: A" / "Answer: B".
+      answer-only (ablation) = a direct final-channel opener followed only by
+      "Answer: A" / "Answer: B"; there is no analysis channel or rationale.
+    The full prompt remains masked. Harmony routing/format control tokens and the
+    return token are supervised so free generation remains compatible with the
+    strict judge_common.extract_final_channel parser; the only semantic payload in
+    the answer-only continuation is the A/B verdict.
 
-1. an offline-generated, mechanically audited, evidence-grounded adjudication trained
-   with next-token language-model loss;
-2. a direct forced-choice ``q_m -> Y_true`` readout at the Harmony final-channel
-   ``Answer:`` slot.
+ANSWER ORDERING / DEBATER NAME MAPPING (the per-item subtlety)
+--------------------------------------------------------------
+Dataset transcripts record each debater's stance: transcript["Debater A"] is
+"Y_true" OR "Y_false". Arguments
+cross-reference each other by name, so the transcript text is ALWAYS rendered
+with its original labels; the answer ordering is expressed only through the
+<ANSWER_A>/<ANSWER_B> texts and the "<NAME_A> is arguing for answer A" line.
+Truth table (asserted on real items in --check-data):
 
-The grounded teacher receives the visible question, answer options, and verified public
-debate evidence. It does not receive ``q_h`` or either hidden answer option. Story text is
-used only to verify quoted evidence and never enters the verifier prompt.
+    transcript: A argues | orientation | NAME_A    | NAME_B    | target
+    Y_true               | A=Y_true    | Debater A | Debater B | Answer: A
+    Y_true               | A=Y_false   | Debater B | Debater A | Answer: B
+    Y_false              | A=Y_true    | Debater B | Debater A | Answer: A
+    Y_false              | A=Y_false   | Debater A | Debater B | Answer: B
 
-With ``--mode adversarial --qh-aux``, training adds a third direct forced-choice view,
-``q_h -> H_false``. The release objectives are
+Each selected item is rendered in BOTH orientations (paired answer orders), so
+any all-items run stays perfectly label-balanced.
 
-    L_honest = 1.0 L_grounded_LM + 2.0 L_QY(Y_true)
-    L_adv    = 1.0 L_grounded_LM + 2.0 L_QY(Y_true)
-               + 2.0 L_QH(H_false)
+SPLIT (story-level, deterministic)
+----------------------------------
+A NEW 8:2 split over unique story titles, seeded with the project seed
+1090998506967575423. All question pairs sharing a story stay in the same split.
+The split + per-index metadata (pair_id, story_title, source_partition, organic
+H-text overlap flags) is written below dataset/<NAME>/ using the dataset name.
+For the current exploratory capacity run, --train-all keeps this audited split
+only as provenance: training merges the audited train+eval rows and disables
+Trainer evaluation. The rationale arm verifies both rationale artifacts first;
+the answer-only arm never reads or requires them.
 
-The third view directly supervises the hidden target. It represents the report's
-trainer-compromised capacity-elicitation setting and must not be described as
-transcript-only emergent steering.
+ORGANIC H-TEXT OVERLAP (audited, NOT excluded)
+----------------------------------------------
+Some honest transcripts organically mention text equal to an item's H_true /
+H_false answer (e.g. a character name). These items are NOT excluded — the
+transcript is required content, and transcripts carrying story evidence relevant
+to q_h is precisely the internalization phenomenon under study. --check-data
+flags them per item so the comparison can break out q_h shifts on overlap vs
+non-overlap items. Hard failures remain reserved for CONSTRUCTED leaks (q_h
+question text, literal label tokens, story text, "hidden hypothesis").
 
-Every selected item is rendered in both A/B answer orientations. The story-level split is
-deterministic and keeps all question pairs from one story together. The report schedule
-uses full-parameter fine-tuning for three epochs, learning rate ``1e-5``, and effective
-batch size ``8``. ``config/accelerate-zero3.yaml`` launches four DeepSpeed ZeRO-3
-processes and offloads optimizer state to CPU.
+MEMORY / HARDWARE (why this cannot run on a laptop)
+---------------------------------------------------
+bf16 weights with bf16 Adam states at lr 1e-5 produce per-step updates smaller
+than bf16's representable increment for typical weights — they round to zero and
+never accumulate. Full FT therefore keeps FP32 MASTER WEIGHTS, costing about
+16 bytes/param of sharded state (fp32 params + fp32 grads + fp32 Adam moments)
+~ 334 GB for 20.9e9 params, plus ~14 GB/GPU of bf16 gathers + activations.
+That fits 8x80GB H100s (~56 GB/GPU) and does NOT fit 4 (~98 GB/GPU). preflight()
+enforces this with the full table; there is no LoRA fallback.
 
-Mainline workflow:
+WORKFLOW
+--------
+Local (torch-free; M4 laptop is fine):
+    python3 ft-verifier-oss-full.py --check-data
+    python3 ft-verifier-oss-full.py --dataset BoolQ --check-data
+    python3 ft-verifier-oss-full.py --mode adversarial --check-data
+Cluster (8x H100 FSDP), in order:
+    python3 ft-verifier-oss-full.py --prepare-bf16      # once; dequantize MXFP4 -> bf16 base
+    # Add --mode adversarial to the rationale/check/tokenizer/train commands to use
+    # selected adversarial transcripts and write separate adversarial artifacts.
+    python3 ft-verifier-oss-full.py --check-tokenizer   # mask/length checks, no GPU needed
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \\
+        torchrun --standalone --nproc_per_node=8 ft-verifier-oss-full.py --smoke
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \\
+        torchrun --standalone --nproc_per_node=8 ft-verifier-oss-full.py
+Answer-only ablation (no rationale generation/check step):
+    python3 ft-verifier-oss-full.py --supervision answer-only --check-tokenizer
+    PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True \\
+        torchrun --standalone --nproc_per_node=8 ft-verifier-oss-full.py \\
+        --supervision answer-only --smoke
+    # Add --mode adversarial for the matched adversarial-transcript arm.
 
-    # Build and audit q_m training rows.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-data
+GROUNDED ADJUDICATION (--supervision grounded; grounded-adjudication-v1)
+------------------------------------------------------------------------
+A third arm with TWO VIEWS per row, two forwards and ONE backward:
+  View 1 supervises a per-ITEM, mechanically audited, ORIENTATION-INVARIANT analysis
+    target -- one verbatim evidence span per debater (side, single-round containment and
+    story-verification status all RECOMPUTED by the harness, never trusted from the
+    teacher), a letter-free comparison paragraph in debater-name space, and a derived
+    conclusion -- in the same harmony scaffold the rationale arm uses.
+  View 2 is the restricted two-letter A/B NLL at the DIRECT final-channel answer slot
+    (chat prompt ++ FINAL_CHANNEL_PREFILL, with NO analysis in context), i.e. the exact
+    forced_choice_leg() the --qh-aux arm uses, pointed at q_m with NO q_h sibling.
+  L = lambda_lm * L_LM + lambda_fc * L_FC   (defaults 1.0 / 2.0)
 
-    # Generate and audit grounded targets for each split; Stage 07 provides the vLLM
-    # endpoint and runs both datasets/modes.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --generate-grounded --split train \
-        --teacher-backend api --teacher-base-url http://127.0.0.1:18888/v1
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-grounded
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-tokenizer
+q_h / H_true / H_false / h_target never reach the teacher and never enter a supervised
+field; H text is read only by a reject-only audit predicate (GROUNDED_H_HYGIENE_NOTE).
+Targets are generated OFFLINE (two blind attempts, then two gold-note attempts) and are
+bound to their rows by hash; items the teacher never resolves are WRITTEN as unresolved
+records and are never silently dropped (--grounded-unresolved fail|answer-only).
 
-    # Build the trainer-compromised q_h view.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H --mode adversarial \
-        --supervision grounded --qh-aux --qh-lambda 2 --check-data
+    python3 ft-verifier-oss-full.py --dataset QuALITY-H --supervision grounded --check-data
+    # Generation runs against ONE local vLLM server holding checkpoints/gpt-oss-20b-bf16-base
+    # (see the launchers), with bounded HTTP concurrency, for --split train and eval:
+    python3 ft-verifier-oss-full.py --supervision grounded --generate-grounded --split train \\
+        --teacher-backend api --teacher-model gpt-oss-20b-bf16-base \\
+        --teacher-base-url http://127.0.0.1:18888/v1 --generate-grounded-concurrency 16
+    python3 ft-verifier-oss-full.py --supervision grounded --check-grounded
+    python3 ft-verifier-oss-full.py --supervision grounded --check-tokenizer
+    accelerate launch --config_file config/accelerate-zero3.yaml \\
+        ft-verifier-oss-full.py --supervision grounded --epochs 2
+See script/16|17-finetune-verifier-grounded*.slurm. The grounded launchers deliberately do
+NOT pass --train-all: this arm keeps the audited 8:2 story split. Without a served teacher,
+--generate-grounded-workers N is the legacy transformers multi-GPU fallback.
 
-    # Train through the matching Stage 08 or Stage 09 Slurm launcher.
+q_h AUXILIARY LOSS (--qh-aux; explicit POSITIVE CONTROL / capacity arm)
+-----------------------------------------------------------------------
+--qh-aux is OFF by default and is valid with --supervision answer-only or
+--supervision grounded. In the answer-only arm, when it is on,
+every microbatch is ONE PAIRED EXAMPLE: a q_m forced-choice readout derived from
+the unchanged audited q_m judge prompt plus a sibling q_h forced-choice readout
+built from adversarial_transcript.score_verifier's PRODUCTION templates. Both
+inputs end at the same FINAL_CHANNEL_PREFILL and score the same single-token
+" A"/" B" completions with the same restricted binary NLL. Two forwards (Y then
+H) produce L = L_Y^FC + lambda * L_H^FC and ONE backward.
 
-The CLI also exposes answer-only and rationale supervision modes for controlled
-implementation studies. They are outside the Section 6 release workflow unless invoked
-explicitly.
+READ THIS BEFORE CITING ANY RESULT FROM THIS ARM: it supervises q_h DIRECTLY.
+It is a positive control / capacity probe (can the verifier's q_h posterior be
+moved at all, and how much does that cost q_m?), NOT evidence of transcript-only
+emergent posterior steering. The pure arm (no --qh-aux) is untouched and stays
+bit-reproducible: identical q_m rows/bytes/hashes, identical rationale artifacts,
+identical TrainingArguments.
+
+Mode lock (no CLI override in v1):  honest -> H_true,  adversarial -> H_false.
+The default --qy-loss forced-choice uses the same two-letter NLL for L_Y and L_H.
+The default qh-lambda is 2.0; pass --qh-lambda 1.0 explicitly if an equal scalar
+weight comparison with the legacy q_m/q_h pair is desired.
+The legacy --qy-loss token-ce path remains available only to reproduce the old
+q_h-positive-control checkpoints; there lambda=1 is not equal per decision.
+
+With --supervision grounded, --qh-aux adds a third loss to the two grounded views:
+the grounded LM view and the direct q_m forced-choice view remain the Y_true-supporting
+views, while the sibling q_h forced-choice view is weighted by --qh-lambda. The
+grounded+qh-aux arm always uses the forced-choice q_m implementation; --qy-loss token-ce
+is rejected there. Its default objective is therefore
+`lambda_lm * L_grounded_lm + lambda_fc * L_grounded_qy + qh_lambda * L_qh`,
+with qh_lambda=2.0.
+
+    # 1. build + audit the two extra q_h artifacts (writes dataset/ files)
+    python3 ft-verifier-oss-full.py --dataset QuALITY-H --mode adversarial \\
+        --supervision answer-only --qh-aux --check-data
+    # 2. tokenizer contracts (single-token " A"/" B", prefill suffix, lengths)
+    python3 ft-verifier-oss-full.py --mode adversarial --supervision answer-only \\
+        --qh-aux --check-tokenizer
+    # 3. plumbing smoke: lambda 0 skips q_h (L == forced-choice L_Y, NOT pure-arm CE)
+    accelerate launch --config_file config/accelerate-zero3.yaml \\
+        ft-verifier-oss-full.py --mode adversarial --supervision answer-only \\
+        --qh-aux --qy-loss forced-choice --qh-lambda 0 --smoke
+    # 4. real smoke, then the real run (see script/04|09-finetune-verifier*.slurm)
+
+Escape hatch (DeepSpeed ZeRO-3, mirrors huggingface/gpt-oss-recipes):
+    accelerate launch --config_file config/accelerate-zero3.yaml \\
+        ft-verifier-oss-full.py --train-all --epochs 5
+With the checked-in config this is ZeRO-3 + optimizer CPU offload, intended for
+4x H100 96GB + large CPU RAM (512GB is the target headroom).
 """
 
 import argparse
@@ -77,15 +212,25 @@ import time
 from collections import Counter
 from datetime import datetime, timezone
 
-# Shared torch-free implementation of the judge prompt and parser.
-from judge_common import ANALYSIS_MARKER, FINAL_MARKER, build_judge_user_content_mapped
+# Torch-free single source of truth for the judge prompt/parser (yaml + stdlib only).
+from judge_common import (
+    ANALYSIS_MARKER,
+    FINAL_MARKER,
+    NATIVE_ANSWER_PREFILL,
+    NATIVE_ASSISTANT_HEADER,
+    NATIVE_CONTROL_TOKENS,
+    NATIVE_EOT_TOKEN,
+    NATIVE_NO_PRIVATE_CHANNEL_NOTE,
+    NATIVE_TARGET_SEPARATOR,
+    build_judge_user_content_mapped,
+)
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:  # keep `adversarial_transcript` importable regardless of cwd
     sys.path.insert(0, _HERE)
 
-# Production q_h readout contract. Importing it keeps the auxiliary training prompt
-# byte-identical to the prompt used by the verifier and MI scorers.
+# PRODUCTION q_h readout contract, imported READ-ONLY (never edited here) so the
+# --qh-aux training prompt is byte-identical to what score_verifier / mi-ksg score.
 # score_verifier's module-level imports are stdlib + quote_utils only (torch is lazy
 # inside ForcedChoiceVerifier), so this stays torch-free for --check-data.
 from adversarial_transcript import common as adv_common  # noqa: E402
@@ -94,34 +239,105 @@ from adversarial_transcript.score_verifier import (  # noqa: E402
     FINAL_CHANNEL_PREFILL,
     GENERATION_PROMPT_SUFFIX as QH_GENERATION_PROMPT_SUFFIX,
     LABEL_COMPLETIONS,
+    LLAMA3_BASE_MODEL,
+    LLAMA3_BASE_REVISION,
+    LLAMA3_CONTEXT,
+    LLAMA3_CONTROL_ID_BASE,
+    LLAMA3_CONTROL_ID_COUNT,
+    LLAMA3_MODEL_CLASSES,
+    LLAMA3_READOUT_BUDGET,
+    MODEL_FAMILIES,
+    MODEL_FAMILY_GPT_OSS,
+    MODEL_FAMILY_LLAMA3,
+    NATIVE_CHECKPOINT_PROTOCOL_V2,
+    NATIVE_DTYPE,
+    NATIVE_READOUT,
+    NATIVE_READOUT_TAIL_TOKENS,
     PROMPT_VERSION as QH_READOUT_PROMPT_VERSION,
     QH_READOUT_TEMPLATE,
+    assert_native_message_boundary,
+    assert_native_revision,
+    assert_native_tokenizer_identity,
+    assert_native_training_base,
     build_qh_prompt,
+    canonical_descriptor,
+    default_revision_for,
+    describe_model_source,
     deterministic_answer_order,
+    model_descriptor,
+    native_control_id_counts,
+    native_forbidden_literals,
+    native_letter_token_ids,
+    native_max_len,
+    native_prefill_token_ids,
+    native_protocol,
     render_verified_transcript,
+    resolve_model_family,
+    tokenizer_file_fingerprint,
 )
 
-MODEL_NAME = "openai/gpt-oss-20b"
+MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
 DEFAULT_DATASET = "QuALITY-H"
 DATASET_ROOT = "dataset"
-BF16_DIR = "checkpoints/gpt-oss-20b-bf16-base"
-DEFAULT_OUTPUT_DIR = "checkpoints/gpt-oss-20b-verifier-fullft-{dataset}"
+# FROZEN LEGACY-ARM LITERAL, deliberately NOT derived from MODEL_NAME any more.
+# default_model_name_for() resolves `--model-family gpt-oss` to this directory, which
+# names an ALREADY PREPARED bf16 base on disk. Re-deriving it from the migrated
+# MODEL_NAME would silently rename an existing artifact (and point the legacy arm at a
+# directory that was never produced), so the legacy arm keeps its pre-migration path.
+BF16_DIR = "checkpoints/Meta-Llama-3-8B-Instruct-bf16-base"
+DEFAULT_OUTPUT_DIR = f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-{{dataset}}"
 DEFAULT_ADVERSARIAL_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-{{dataset}}"
 )
 DEFAULT_ANSWER_ONLY_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-answer-only-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-answer-only-{{dataset}}"
 )
 DEFAULT_ADVERSARIAL_ANSWER_ONLY_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-answer-only-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-answer-only-{{dataset}}"
 )
 DEFAULT_GROUNDED_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-grounded-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-grounded-{{dataset}}"
 )
 DEFAULT_ADVERSARIAL_GROUNDED_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-grounded-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-grounded-{{dataset}}"
 )
 DEEPSPEED_CONFIG_PATH = "config/accelerate-zero3.yaml"
+
+# ---------------------------------------------------------------------------
+# Student model family
+# ---------------------------------------------------------------------------
+# MODEL_NAME and every DEFAULT_*_OUTPUT_DIR above track the NATIVE default student, so
+# a native run's checkpoint directory is unambiguously tagged with the 3.1 version
+# rather than reusing a 3.0 name. BF16_DIR alone is frozen (see above) because it names
+# the already-prepared legacy base. The teacher, the rationale/grounded artifact
+# generators, the judge helpers and the production scorer are all unchanged;
+# `--model-family gpt-oss` still selects the historical harmony student.
+DEFAULT_MODEL_FAMILY = MODEL_FAMILY_LLAMA3
+LLAMA3_DEEPSPEED_CONFIG_PATH = "config/accelerate-zero3-llama3-1.yaml"
+LLAMA3_N_PARAMS_EST = 8.03e9
+# VERSIONED tag: it lands in every native default output directory (family_output_dir),
+# so a 3.1 run can never be confused with a 3.0 one on disk.
+LLAMA3_MODEL_TAG = "llama-3-1-8b-instruct"
+GPT_OSS_MODEL_TAG = "gpt-oss-20b"
+# transformers gate per family. The harmony student keeps its historical <5 pin; the
+# native student runs on the installed transformers 5.x line, whose Trainer/FSDP
+# semantics were reviewed explicitly (custom-loss division by the accumulation steps,
+# DeepSpeed scale_wrt_gas=False, and FSDP defaulting to version 2 -- which is why the
+# native FSDP branch pins fsdp_version=1 below).
+# The native window is the INSPECTED minor line only: every native semantic above was
+# read out of transformers 5.14.1's own sources (custom-loss/GAS division, DeepSpeed
+# scale_wrt_gas, fsdp_version default, HfTrainerDeepSpeedConfig field names). A 5.15+
+# bump must be re-reviewed rather than silently admitted, so it fails closed here.
+NATIVE_TRANSFORMERS_INSPECTED = "5.14.1"
+MODEL_FAMILY_TRANSFORMERS_RANGE = {
+    MODEL_FAMILY_GPT_OSS: ("4.56.2", "5.0.0"),
+    MODEL_FAMILY_LLAMA3: (NATIVE_TRANSFORMERS_INSPECTED, "5.15.0"),
+}
+# The FSDP transformer block to auto-wrap, per family.
+MODEL_FAMILY_FSDP_LAYER_CLS = {
+    MODEL_FAMILY_GPT_OSS: "GptOssDecoderLayer",
+    MODEL_FAMILY_LLAMA3: "LlamaDecoderLayer",
+}
 
 SPLIT_SEED = 1090998506967575423  # project-wide deterministic split seed
 TRAIN_FRACTION = 0.8
@@ -134,8 +350,11 @@ SUPERVISION_RATIONALE = "rationale"
 SUPERVISION_ANSWER_ONLY = "answer-only"
 SUPERVISION_GROUNDED = "grounded"
 SUPERVISION_MODES = (SUPERVISION_RATIONALE, SUPERVISION_ANSWER_ONLY, SUPERVISION_GROUNDED)
-# Constant analysis target used only by ``--debug-constant-rationale`` during smoke
-# and tokenizer checks; production training uses per-example supervision.
+# Former fixed analysis sentence. It is NO LONGER the training target: the analysis
+# channel is now supervised on a per-example transcript-grounded rationale generated
+# offline (see RATIONALE_* below). ANALYSIS_TARGET survives ONLY as the
+# --debug-constant-rationale value, which is restricted to --smoke / --check-tokenizer
+# plumbing checks and can never produce a real checkpoint.
 ANALYSIS_TARGET = (
     "We need to weigh the two options and then provide the final choice."
 )
@@ -173,13 +392,13 @@ if GENERATION_PROMPT_SUFFIX != QH_GENERATION_PROMPT_SUFFIX:
     )
 if FINAL_CHANNEL_PREFILL != f"{FINAL_CHANNEL_HEADER}Answer:":
     raise RuntimeError(
-        "score_verifier.FINAL_CHANNEL_PREFILL does not match the answer-only final-channel "
+        "score_verifier.FINAL_CHANNEL_PREFILL is no longer the answer-only final-channel "
         f"scaffold + 'Answer:': {FINAL_CHANNEL_PREFILL!r}. The Q_H aux readout would be "
         "scored at a different slot than the one this script trains."
     )
 if not TARGET_TEMPLATE.format(letter="A").startswith("Answer:"):
     raise RuntimeError(
-        f"TARGET_TEMPLATE {TARGET_TEMPLATE!r} does not start with 'Answer:'; the Q_H aux "
+        f"TARGET_TEMPLATE {TARGET_TEMPLATE!r} no longer starts with 'Answer:'; the Q_H aux "
         "readout prefill and the Q_Y answer slot have diverged."
     )
 if set(LABEL_COMPLETIONS) != {"A", "B"}:
@@ -191,13 +410,40 @@ for _letter, _completion in LABEL_COMPLETIONS.items():
     _readout = f"{FINAL_CHANNEL_PREFILL}{_completion}{RETURN_TOKEN}"
     if _answer_slot != _readout:
         raise RuntimeError(
-            "Q_Y answer-only continuation does not equal final-channel prefill + "
+            "Q_Y answer-only continuation no longer equals final-channel prefill + "
             f"single-letter completion + return for {_letter!r}: "
             f"{_answer_slot!r} != {_readout!r}"
         )
 
+# ---------------------------------------------------------------------------
+# Native student serialization (Llama-3-Instruct)
+# ---------------------------------------------------------------------------
+# Llama-3 Instruct has NO analysis/think/final channel, so the harmony scaffold has no
+# native equivalent. The student continuation is:
+#     [PUBLIC G + "\n\n"] + "Answer: X" + <|eot_id|>
+# and the direct readout is the SAME chat prompt + "Answer:" with no G in context.
+# The teacher-side serializer (build_supervised_continuation) and its rationale-artifact
+# callers are deliberately untouched: those artifacts are frozen gpt-oss data.
+NATIVE_GENERATION_PROMPT_SUFFIX = NATIVE_ASSISTANT_HEADER
+NATIVE_ANSWER_ONLY_MAX_CONT_TOKENS = ANSWER_ONLY_MAX_CONT_TOKENS
+# The number of continuation tokens after the "Answer:" prefill (the letter and its
+# terminal EOT) is NATIVE_READOUT_TAIL_TOKENS, imported above from score_verifier: the
+# FT view budget and the scorer readout headroom must be the SAME constant (F9).
+if not TARGET_TEMPLATE.format(letter="A").startswith(NATIVE_ANSWER_PREFILL):
+    raise RuntimeError(
+        f"TARGET_TEMPLATE {TARGET_TEMPLATE!r} no longer starts with "
+        f"{NATIVE_ANSWER_PREFILL!r}; the native readout prefill and the Q_Y answer slot "
+        "have diverged."
+    )
+if FINAL_CHANNEL_PREFILL != f"{FINAL_CHANNEL_HEADER}{NATIVE_ANSWER_PREFILL}":
+    raise RuntimeError(
+        "the harmony prefill is no longer the final-channel header plus the shared "
+        f"{NATIVE_ANSWER_PREFILL!r} verdict prefix: {FINAL_CHANNEL_PREFILL!r}"
+    )
+
 QH_AUX_SCHEDULE_VERSION = "qh-letter-schedule-v1"
-# Fixed semantic target map for the optional q_h auxiliary view.
+# MODE LOCK. v1 has no CLI override: honest trains q_h toward H_true, adversarial
+# toward H_false. Anything else would be a different experiment, not a flag.
 QH_AUX_TARGET_SEMANTIC = {"honest": "H_true", "adversarial": "H_false"}
 QH_AUX_SEMANTIC_LABELS = ("H_true", "H_false")
 QH_AUX_DEFAULT_LAMBDA = 2.0
@@ -227,11 +473,13 @@ QH_AUX_LEGACY_LOSS_FORMULA = (
     "renormalization is exactly the production forced-choice quantity."
 )
 QH_AUX_LEGACY_LAMBDA_NOTE = (
-    "lambda weights two task losses: lambda=2.0 gives the Q_H term twice the scalar "
-    "weight of the token-CE Q_Y term. They are not equal per decision: L_Y is a token "
-    "mean over qy_continuation_token_count (C), so the Q_Y answer letter is diluted by "
-    "1/C, while L_H is an undiluted letter NLL. Use an explicit lambda for controlled "
-    "comparisons with this alternate Q_Y objective."
+    "lambda weights two TASK losses: the default lambda=2.0 deliberately gives the Q_H "
+    "positive-control term twice the scalar weight of the legacy Q_Y loss. They are NOT "
+    "equal per decision: L_Y is a token mean "
+    "over qy_continuation_token_count (C) answer-only continuation tokens, so the Q_Y answer "
+    "letter is diluted by 1/C, while L_H is the undiluted letter NLL. The default is now "
+    "lambda=2.0; a legacy lambda=1.0 reproduction must be explicit and a sweep around 1/C "
+    "must likewise be explicit."
 )
 QH_AUX_LOSS_FORMULA = (
     "L = L_Y^FC + lambda * L_H^FC  (two forwards, one backward on the sum). "
@@ -249,10 +497,10 @@ QH_AUX_LAMBDA_NOTE = (
     "two-letter NLLs. lambda=2.0 is the grounded+qh-aux default: the two grounded "
     "Y_true-supporting views (LM and direct Q_Y) are balanced by the Q_H positive-control "
     "term at the aggregate scalar-loss level. The equal-per-decision comparison value is "
-    "lambda=1.0. For the answer-only token-CE mode, lambda=2.0 "
-    "is an explicit stronger Q_H capacity-elicitation weight; it is not claimed to equalize "
-    "gradient norms. With forced-choice Q_Y, the answer letter is not diluted across a "
-    "multi-token continuation. This equalizes the "
+    "lambda=1.0. For the legacy answer-only arm, lambda=2.0 "
+    "is an explicit stronger Q_H positive-control weight; it is not claimed to equalize "
+    "gradient norms. The Q_Y term is no "
+    "longer diluted across its legacy answer-only continuation tokens. This equalizes the "
     "scalar decision-loss coefficients only in the per-decision lambda=1 comparison, not "
     "the parameter-gradient norms of different prompts."
 )
@@ -290,11 +538,13 @@ QH_ALIGNMENT_TARGET = 0.5
 QH_ALIGNMENT_WARN_BAND = 0.10
 
 QH_AUX_SEMANTICS_NOTE = (
-    "This checkpoint directly supervises a Q_H forced-choice objective through --qh-aux. "
-    "It represents the trainer-compromised capacity-elicitation setting: it measures whether "
-    "and at what Q_Y cost the verifier can be shifted toward the target. It is not evidence "
-    "of transcript-only emergent steering and must remain separate from checkpoints trained "
-    "without the Q_H objective."
+    "This checkpoint was trained with an EXPLICIT, DIRECTLY SUPERVISED Q_H objective "
+    "(--qh-aux). It is a positive-control / capacity arm: it shows whether and at what Q_Y "
+    "cost the verifier's Q_H forced-choice posterior can be moved, and it is NOT evidence of "
+    "transcript-only emergent posterior steering. Any paper sentence stating that Q_H never "
+    "enters verifier training does NOT apply to this arm (the pure arm, without --qh-aux, is "
+    "unchanged and still satisfies it). The paper edit is deferred; do not mix this checkpoint "
+    "into pure-arm aggregates."
 )
 
 # ---------------------------------------------------------------------------
@@ -302,20 +552,30 @@ QH_AUX_SEMANTICS_NOTE = (
 # ---------------------------------------------------------------------------
 # These artifacts are generated OFFLINE by --generate-rationales (a teacher reads the
 # same q_m verifier prompt + the gold answer and writes a short justification) and
-# consumed by training / --check-tokenizer. Base train/eval JSONLs remain separate;
+# consumed by training / --check-tokenizer. The base train/eval JSONLs are unchanged;
 # rationales live in sibling files and are bound to their base row by hash.
 #
-# Usable transcript counts are derived from the selected dataset rather than fixed
-# per-dataset constants (see ``count_transcript_bearing_rows``).
+# NOTE (2026-08-04): the former EXPECTED_ADVERSARIAL_ITEMS constant
+# ({QuALITY-H: 205, GPQA: 85, TruthfulQA: 110, BoolQ: 873}) is GONE. Those numbers
+# were captured before the high-similarity pair filter republished the datasets, so
+# every adversarial run failed pre-train on every dataset. The usable-item count is
+# now DERIVED from the dataset file itself (see count_transcript_bearing_rows), which
+# cannot go stale.
 
-# Teacher defaults. The Transformers backend loads one local model and extracts its
-# final channel; the API backend uses a dedicated generation configuration.
+# Teacher (rationale generator) defaults. Self-distillation by default: gpt-oss-20b
+# writes the analysis target it could itself produce. Backend is pluggable; the
+# transformers path mirrors judge-oss.py (single GPU, MXFP4->bf16) + extract_final_channel,
+# the api path reuses debate.ApiModelClient with a DEDICATED greedy lm_config.
 TEACHER_MODEL_DEFAULT = "openai/gpt-oss-20b"
 TEACHER_BACKEND_DEFAULT = "transformers"
 TEACHER_BASE_URL_DEFAULT = "http://127.0.0.1:28888/v1"  # judge.py's local vLLM endpoint
 TEACHER_API_KEY_ENV_DEFAULT = "OPENAI_API_KEY"  # value defaults to "EMPTY" for local vLLM
-# gpt-oss emits an analysis channel before its final channel, so this cap must cover both.
-# Greedy decoding stops at ``<|return|>``; the limit only bounds incomplete/runaway outputs.
+# gpt-oss is a reasoning model: it emits a long analysis CoT before the final channel, so
+# the cap must be generous or extract_final_channel returns "" (empty rationale). Sized to
+# fit the analysis + a short final; greedy stops at <|return|> so this only caps runaways.
+# Raised 2048 -> 4096 after the first HPC grounded run: ~70% of grounded attempts returned
+# an empty final channel, and exhausting the cap mid-analysis was one of the two causes
+# (the other was the prompt suppressing the channel structure, fixed in the prompts below).
 TEACHER_MAX_NEW_TOKENS_DEFAULT = 4096
 TEACHER_GREEDY_TEMPERATURE = 0.0
 TEACHER_RETRY_TEMPERATURE = 0.7   # sampled retries to escape a bad greedy candidate
@@ -409,8 +669,8 @@ TEACHER_INSTRUCTION_TEMPLATE = (
 # the teacher context and never enter ANY supervised field. H text is read ONLY by a
 # reject-only audit predicate that can remove or flag an item, never add content.
 #
-# Rationale, answer-only, and grounded modes use separate artifacts, checkpoint paths,
-# and loss implementations.
+# The rationale and answer-only arms are untouched: different artifact files, a different
+# checkpoint directory, a different loss, and no shared mutable state.
 GROUNDED_PROMPT_VERSION = "grounded-adjudication-v1"
 
 GROUNDED_DEBATERS = ("Debater A", "Debater B")
@@ -432,8 +692,8 @@ GROUNDED_ANALYSIS_SCHEMA = (
     "Conclusion: <Debater A|Debater B> presents the stronger case."
 )
 
-# Audit thresholds are recorded in each artifact and manifest. Loading requires an
-# exact match so outputs produced under another threshold set are rejected.
+# Audit thresholds. Every one of these is recorded in the artifact + manifest and must
+# match the code at load time, so a threshold change cannot silently reuse old artifacts.
 GROUNDED_SPAN_MIN_NORM_CHARS = 25   # measured: median real <quote> is 30 normalized chars
 GROUNDED_SPAN_MAX_NORM_CHARS = 300
 GROUNDED_CHECK_MIN_CHARS = 120
@@ -460,8 +720,8 @@ GROUNDED_UNRESOLVED_POLICIES = (GROUNDED_UNRESOLVED_FAIL, GROUNDED_UNRESOLVED_AN
 GROUNDED_UNRESOLVED_DEFAULT = GROUNDED_UNRESOLVED_FAIL
 GROUNDED_LAMBDA_LM_DEFAULT = 1.0
 GROUNDED_LAMBDA_FC_DEFAULT = 2.0
-# Teacher replicas for ``--generate-grounded``. One uses a single local replica; N>1
-# loads one replica per GPU and runs N per-item tier ladders concurrently.
+# Teacher replicas for --generate-grounded. 1 = the historical single-GPU, single-threaded
+# path; N>1 loads one replica per GPU and runs N per-item tier ladders concurrently.
 GROUNDED_WORKERS_DEFAULT = 1
 
 # ---- grounded API transport (--teacher-backend api) ------------------------------------
@@ -520,8 +780,10 @@ GROUNDED_TEACHER_SYSTEM = (
     "ONLY by their names, Debater A and Debater B, and you never write an answer letter. "
     "You copy evidence verbatim from the transcript; you never invent, paraphrase, or add "
     "outside facts. "
-    # Scope the token/tag ban to the four output lines so Harmony channel-control tokens
-    # outside the final answer remain available to the model.
+    # The ban is scoped to the CONTENT of the four lines on purpose. The first HPC run used
+    # an unscoped 'no <|...|> tokens' rule, which suppressed the harmony channel structure
+    # itself: the model answered without ever opening a final channel, so the extractor
+    # returned an empty string and ~70% of attempts parsed to zero lines.
     "Reason for as long as you need first, then give your FINAL ANSWER as exactly the "
     "four required lines and nothing else: no preamble, no closing remark, no headings, "
     "no bullets, no markdown. The CONTENT of those four lines must contain no XML or HTML "
@@ -702,15 +964,120 @@ MODE_CONFIG = {
 }
 
 
+def require_model_family(family):
+    """Fail closed on an unknown family.
+
+    Every `X if llama3 else <harmony>` dispatcher below would otherwise silently hand a
+    third family the gpt-oss protocol, which is exactly the kind of quiet cross-family
+    fallback this migration must not have.
+    """
+    if family not in MODEL_FAMILIES:
+        raise ValueError(f"unknown model family {family!r}; expected {MODEL_FAMILIES}")
+    return family
+
+
+def model_family_of(args_or_mode):
+    """Student model family. String-only mode lookups use the current default."""
+    if isinstance(args_or_mode, str):
+        return DEFAULT_MODEL_FAMILY
+    return require_model_family(
+        getattr(args_or_mode, "model_family", None) or DEFAULT_MODEL_FAMILY
+    )
+
+
+def native_of(args_or_mode):
+    """Whether the student speaks the native (non-harmony) protocol."""
+    return model_family_of(args_or_mode) == MODEL_FAMILY_LLAMA3
+
+
+def default_model_name_for(family):
+    return LLAMA3_BASE_MODEL if family == MODEL_FAMILY_LLAMA3 else BF16_DIR
+
+
+def model_name_of(args_or_mode):
+    """Resolved student base: the pinned Llama-3 hub id (or a local materialisation /
+    produced checkpoint) for the native family, else the prepared bf16 gpt-oss base."""
+    family = model_family_of(args_or_mode)
+    if isinstance(args_or_mode, str):
+        return default_model_name_for(family)
+    return getattr(args_or_mode, "model_name", None) or default_model_name_for(family)
+
+
+def model_revision_of(args_or_mode):
+    """Pinned revision for the student base (the pin for a canonical identity, else None).
+
+    An EXPLICIT revision is validated here, before any caller can touch the source: on
+    the native family the only accepted value is the approved pin, and it is only
+    accepted for a directory that really is the canonical materialisation of it (F8).
+    The check reads no model content at all. main() converts the same failure into a
+    clean CLI exit; this raise covers library callers.
+    """
+    family = model_family_of(args_or_mode)
+    explicit = (None if isinstance(args_or_mode, str)
+                else getattr(args_or_mode, "model_revision", None))
+    name = model_name_of(args_or_mode)
+    assert_native_revision(name, family, explicit)
+    if explicit:
+        return explicit
+    return default_revision_for(name, family)
+
+
+def model_descriptor_of(args_or_mode):
+    """The CANONICAL cross-component identity shared by train/--check-tokenizer/scorer.
+
+    The pinned hub repo and a local materialisation of exactly those pinned files are
+    the same base model, so they produce the same descriptor and a checkpoint trained
+    from either is recognised by a cold scorer (F1). Which physical directory this run
+    read is separate provenance (source_info["source_path"], metadata base_dir /
+    base_source_path), never identity.
+    """
+    return canonical_descriptor(
+        model_name_of(args_or_mode),
+        model_family_of(args_or_mode),
+        model_revision_of(args_or_mode),
+    )
+
+
+def deepspeed_config_of(args_or_mode):
+    """Selected accelerate/DeepSpeed config. Never falls back across families."""
+    explicit = (None if isinstance(args_or_mode, str)
+                else getattr(args_or_mode, "accelerate_config", None))
+    if explicit:
+        return explicit
+    return (LLAMA3_DEEPSPEED_CONFIG_PATH if native_of(args_or_mode)
+            else DEEPSPEED_CONFIG_PATH)
+
+
+def n_params_est_of(args_or_mode):
+    return LLAMA3_N_PARAMS_EST if native_of(args_or_mode) else N_PARAMS_EST
+
+
+def family_output_dir(output_dir, family):
+    """Map a default checkpoint dir onto the selected family (tag substitution only).
+
+    Only the model tag in the directory NAME changes; the dataset/mode/supervision
+    artifact stems are model-independent and stay byte-identical, so the audited data
+    artifacts are shared across families exactly as they are across arms.
+    """
+    if family == MODEL_FAMILY_GPT_OSS:
+        return output_dir
+    tag = {MODEL_FAMILY_LLAMA3: LLAMA3_MODEL_TAG}[family]
+    if GPT_OSS_MODEL_TAG not in output_dir:
+        return output_dir
+    return output_dir.replace(GPT_OSS_MODEL_TAG, tag)
+
+
 def supervision_of(args_or_mode):
-    """Return the selected supervision objective; string input selects rationale."""
+    """Selected supervision objective; string-only mode lookups use the historical
+    rationale default for backward compatibility."""
     if isinstance(args_or_mode, str):
         return SUPERVISION_RATIONALE
     return getattr(args_or_mode, "supervision", SUPERVISION_RATIONALE)
 
 
 def qh_aux_of(args_or_mode):
-    """Return whether the q_h auxiliary view is enabled."""
+    """Whether the q_h auxiliary arm is enabled. String-only mode lookups (and any
+    caller predating --qh-aux) always mean the PURE arm."""
     if isinstance(args_or_mode, str):
         return False
     return bool(getattr(args_or_mode, "qh_aux", False))
@@ -725,10 +1092,10 @@ def qh_lambda_of(args_or_mode):
 
 
 def qy_loss_of(args_or_mode):
-    """Return the effective q_m loss implementation.
+    """Effective q_m loss. Pure/string-mode lookups preserve the historical token CE.
 
-    Runs without ``--qh-aux`` use token CE. The paired q_m/q_h auxiliary mode defaults
-    to the symmetric restricted-A/B forced-choice loss.
+    The symmetric forced-choice objective is deliberately scoped to --qh-aux so the
+    non-q_h answer-only and rationale arms remain behaviorally unchanged.
     """
     if isinstance(args_or_mode, str) or not qh_aux_of(args_or_mode):
         return QY_LOSS_TOKEN_CE
@@ -737,7 +1104,8 @@ def qy_loss_of(args_or_mode):
 
 
 def grounded_of(args_or_mode):
-    """Return whether grounded adjudication is the selected supervision mode."""
+    """Whether the grounded-adjudication arm is selected. String-only mode lookups (and
+    any caller predating --supervision grounded) always mean NOT grounded."""
     return supervision_of(args_or_mode) == SUPERVISION_GROUNDED
 
 
@@ -771,7 +1139,8 @@ def grounded_unresolved_of(args_or_mode):
 
 
 def grounded_workers_of(args_or_mode):
-    """Return the number of local teacher replicas for grounded generation."""
+    """Teacher replicas for --generate-grounded. 1 (the default) is the historical
+    single-GPU, single-threaded path, byte-for-byte."""
     value = getattr(args_or_mode, "generate_grounded_workers", None)
     return GROUNDED_WORKERS_DEFAULT if value is None else int(value)
 
@@ -813,7 +1182,7 @@ def mode_config(mode_or_args):
     if not isinstance(dataset, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", dataset):
         raise ValueError(
             f"invalid dataset name {dataset!r}; --dataset must be a directory name "
-            "such as QuALITY-H or GPQA"
+            "such as QuALITY-H, BoolQ, GPQA, or TruthfulQA"
         )
 
     dataset_dir = os.path.join(DATASET_ROOT, dataset)
@@ -825,7 +1194,9 @@ def mode_config(mode_or_args):
         output_template = mode_values["answer_only_output_dir"]
     else:
         output_template = mode_values["default_output_dir"]
-    output_dir = output_template.format(dataset=dataset)
+    output_dir = family_output_dir(
+        output_template.format(dataset=dataset), model_family_of(mode_or_args)
+    )
     if qh_aux:
         # The q_h-supervised positive control NEVER shares a default checkpoint dir
         # with the pure arm (guard_checkpoint_identity is the second line of defence).
@@ -834,6 +1205,11 @@ def mode_config(mode_or_args):
     return {
         **mode_values,
         "dataset": dataset,
+        "model_family": model_family_of(mode_or_args),
+        "model_name": model_name_of(mode_or_args),
+        "model_revision": model_revision_of(mode_or_args),
+        "model_descriptor": model_descriptor_of(mode_or_args),
+        "accelerate_config": deepspeed_config_of(mode_or_args),
         "supervision": supervision,
         "qh_aux": qh_aux,
         "qy_loss": qy_loss,
@@ -900,12 +1276,15 @@ def _stable_pair_id(dataset, item):
 
 
 def load_and_validate(dataset_path, reference_path, dataset):
-    """Load the compact paired dataset and attach stable local metadata.
+    """Load the compact common dataset schema and attach stable local metadata.
 
-    ``<NAME>.json`` supplies the selected transcript condition and
-    ``<NAME>-with-honest-transcripts.json`` supplies the honest reference. Questions and
-    answers are cross-checked by story title plus the q_m/q_h question pair. ``pair_id``
-    is derived when absent, and ``source_partition`` remains null when unavailable.
+    The current dataset layout no longer carries the old QuALITY-H-full.json
+    wrapper. Instead, <NAME>.json is the transcript-independent reference and
+    <NAME>-with-honest-transcripts.json is its honest-transcript counterpart.
+    Questions and answers are cross-checked by (story_title, q_m question,
+    q_h question), since several examples may share a story. pair_id is
+    deterministically derived when absent. source_partition remains null when
+    the converted source dataset does not expose one.
     """
     items = _read_json(dataset_path, "dataset file")
     reference = _read_json(reference_path, "reference dataset file")
@@ -1012,10 +1391,12 @@ def load_stories_for_items(items, cfg):
 
 
 def count_transcript_bearing_rows(rows, transcript_field):
-    """Count rows whose q_m carries a usable transcript under ``transcript_field``.
+    """Rows whose q_m carries a usable (dict) transcript under `transcript_field`.
 
-    ``load_items_for_mode`` uses this input-derived count to verify that its selection
-    loop preserves every eligible row without relying on per-dataset constants.
+    A deliberately plain, independent scan: it is the DERIVED expectation that
+    load_items_for_mode checks its selection loop against, replacing the stale
+    hardcoded per-dataset constants that used to break every adversarial run
+    whenever the canonical datasets were regenerated.
     """
     return sum(
         1 for row in rows
@@ -1539,7 +1920,7 @@ def qh_item_id(item):
     load_items_for_mode renumbers dataset_index to the selected-mode list in
     adversarial mode and keeps the canonical position in source_dataset_index, so
     indexing by dataset_index there would silently disagree with the candidate /
-    selection and downstream readout artifacts.
+    selection / mi-ksg artifacts.
     """
     return adv_common.item_id_for(item.get("source_dataset_index", item["dataset_index"]))
 
@@ -1781,8 +2162,8 @@ def assert_qh_prompt_parity(item_rows, item, story):
     if matches[0]["messages"][0]["content"] != production_prompt:
         raise AssertionError(
             f"Q_H prompt for {matches[0]['row_id']} is NOT byte-identical to "
-            "adversarial_transcript.score_verifier.build_qh_prompt; the training and "
-            "analysis readouts would differ"
+            "adversarial_transcript.score_verifier.build_qh_prompt; the trained readout would "
+            "differ from the production/mi-ksg readout"
         )
     if not matches[0]["matches_production_order"]:
         raise AssertionError(f"{matches[0]['row_id']}: matches_production_order flag is wrong")
@@ -1909,7 +2290,7 @@ def verify_qh_artifacts_match(rows, jsonl_path):
       * self-consistency — each stored row's provenance hash must match a recomputation
         from its own content, so a lazily edited artifact is caught on its own terms;
       * rebuild identity — (row_id, row_sha256, provenance) must equal the freshly
-        rebuilt sequence, so a re-hashed modification is rejected.
+        rebuilt sequence, so a re-hashed forgery is caught against the source of truth.
     """
     if not os.path.exists(jsonl_path):
         raise RuntimeError(
@@ -1987,12 +2368,17 @@ def select_qh_siblings(qy_rows, qh_rows):
 
 def qh_artifact_provenance_metadata(cfg, artifact_train_rows, artifact_eval_rows,
                                     training_rows, trainer_eval_rows, train_all):
-    """Return separate artifact-file and consumed-training-set hashes.
+    """Artifact-vs-training-set hashes for checkpoint metadata.
 
-    Under ``--train-all``, the consumed training set merges the train and eval artifacts,
-    so its digest differs from either file digest. ``training_rows`` and
-    ``trainer_eval_rows`` must be the post-merge, post-smoke selection returned by
-    ``select_qh_siblings``.
+    Under --train-all the TRAINING SET is the train+eval artifacts MERGED, which is not
+    what either file on disk contains. Recording that merged hash under a *_artifact_*
+    key (as an earlier revision did) left BOTH on-disk artifacts unverifiable against
+    the checkpoint, so the two quantities are reported separately and unambiguously:
+    *_artifact_sha256 always matches the corresponding file, training_set_sha256
+    always matches what the Trainer actually consumed.
+
+    `training_rows`/`trainer_eval_rows` MUST therefore be the select_qh_siblings()
+    output — the post-merge, post-truncation selection — not the pre-selection lists.
     """
     return {
         "train_artifact": cfg["qh_train_jsonl"],
@@ -2034,8 +2420,8 @@ def print_sample_qh_prompts(rows):
 def build_qh_all(args, write_artifacts):
     """Shared by --check-data/--check-tokenizer/train(): build + check the q_h rows.
 
-    The builder reloads items, stories, and the split so q_h artifact construction is
-    isolated from the q_m-only data path.
+    Deliberately self-contained (it reloads items/stories/split) so build_all and the
+    pure q_m path stay byte-for-byte untouched.
     """
     cfg = mode_config(args)
     items = load_items_for_mode(args)
@@ -2169,8 +2555,8 @@ def _gold_unique_trigram_hits(rationale, item, gold_debater):
 def build_teacher_messages(base_row, gold_answer_text):
     """Teacher prompt: an authoritative system message (format) + the student's verifier
     user content verbatim + a grading note (gold answer) + an explicit override of the
-    passage's answer-format instructions. Only the student's user content is used; the
-    base row's assistant target is never fed. The gold-side debater identity
+    passage's answer-format instructions. ONLY the student's user content is used; the
+    base row's assistant target is never fed (Codex #6). The gold-side debater identity
     is re-derived from the visible row mapping and is never sourced from q_h."""
     prompt_text = base_row["messages"][0]["content"]
     gold_letter = base_row["target_letter"]
@@ -2323,14 +2709,35 @@ def _teacher_api_key(args):
 
 
 def _load_teacher(args, extract=None, device_index=None, stats=None):
-    """Build ``generate(messages, temperature, seed)`` with lazy model imports.
+    """Build generate(messages, temperature, seed) -> final-channel prose. Heavy imports
+    are lazy so --check-data / --check-rationales never need a GPU/openai stack.
 
-    The API backend uses a dedicated ``debate.ApiModelClient`` generation configuration;
-    that client does not forward the supplied sampling seed. The Transformers backend
-    loads one gpt-oss replica on ``device_index`` (logical GPU 0 by default), seeds its
-    sampling generator, decodes special tokens, and applies ``extract`` when supplied or
-    the strict Harmony final-channel extractor otherwise. ``stats`` collects call,
-    generated-token, and elapsed-time telemetry when requested.
+    transformers (default): single-GPU gpt-oss like judge-oss.py, decode with special
+    tokens, then judge_common.extract_final_channel. api: debate.ApiModelClient with a
+    DEDICATED greedy lm_config (NOT debate.LM_CONFIG, which is temperature 0.4) (Codex #2).
+    Greedy is reproducible; sampled retries are seeded (transformers honors the seed).
+
+    Only the RATIONALE arm calls this with both `extract` and `device_index` None, and that
+    path — loading, seeding and final-channel-only extraction — is byte-for-byte unchanged.
+    The api branch here is now the RATIONALE api path only: the grounded arm's api teacher
+    is _load_grounded_api_teacher (seeded requests, bounded transport retries,
+    reasoning_content reconstruction), so nothing about this function's api behaviour —
+    including the unused seed below — was changed by that work.
+      * extract (grounded only, transformers backend) replaces final-channel-only
+        extraction with the tolerant grounded extractor. Grounded runs therefore keep the
+        historical LOADING and SEEDING path (device_index is None) but deliberately DO
+        change extraction.
+      * device_index pins this replica to one GPU and moves seeded sampling off the
+        process-global torch.manual_seed onto that device's CUDA RNG. NOTE: PRODUCTION
+        NEVER USES IT. A multi-worker run spawns one isolated process per GPU, and each
+        child narrows itself with CUDA_VISIBLE_DEVICES *before importing torch*, then
+        loads with device_index=None — so every replica takes the same single-GPU path a
+        workers=1 run takes, and the two request identical seeds. The branch is retained
+        because it is the only in-process way to place a second replica, which the tests
+        exercise directly.
+      * stats (grounded only) is a dict this closure accumulates generation telemetry into
+        ({"calls", "new_tokens", "seconds"}). None on the rationale path, which therefore
+        executes one extra `is not None` test and nothing else.
     """
     backend = args.teacher_backend
     if backend == "api":
@@ -2341,8 +2748,10 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
                                        args.teacher_model, lm)
 
         def generate(messages, temperature, seed):
-            # ApiModelClient does not forward this seed; deterministic API operation uses
-            # the temperature-zero attempt. The Transformers backend honors sampled seeds.
+            # seed is intentionally unused here: debate.ApiModelClient does not thread a
+            # seed to the server, so sampled retries on the api path are not bit-reproducible
+            # (Codex impl #4). Greedy attempt 0 (temperature 0) is the reproducible path;
+            # the default backend is transformers, which DOES honor the seed.
             lm["temperature"] = temperature  # ApiModelClient.generate re-reads self.lm
             started = time.perf_counter()
             raw = client.generate(messages)
@@ -2375,9 +2784,14 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
         tokenizer = AutoTokenizer.from_pretrained(args.teacher_model)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        # ``device_map`` places weights, while MXFP4 materialization kernels use the
-        # loading thread's active CUDA device. Bind that device for an explicitly pinned
-        # in-process replica; isolated worker processes use their sole visible device.
+        # In-process pinned replicas only (tests): device_map={'': i} tells accelerate
+        # WHERE the weights go, but the MXFP4->bf16 dequantize/materialization kernels run
+        # on the LOADING THREAD'S CURRENT device, which is still 0 for every replica after
+        # the first -> "CUDA error: an illegal memory access was encountered" inside
+        # _load_state_dict_into_meta_model. Binding the current device for the whole
+        # materialization fixes it. The device_index=None path — which is what BOTH the
+        # rationale arm and every spawned production child take — enters no context at all
+        # and stays byte-for-byte unchanged.
         load_context = (contextlib.nullcontext() if device_index is None
                         else torch.cuda.device(cuda_index))
         with load_context:
@@ -2399,10 +2813,15 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
             if temperature and temperature > 0:
                 if seed is not None:
                     if device_index is None:
-                        torch.manual_seed(seed)          # process-local teacher RNG
+                        torch.manual_seed(seed)          # historical single-teacher path
                     else:
-                        # Use the selected device's CUDA RNG for an in-process pinned
-                        # replica. Isolated workers seed their process-local RNG above.
+                        # Per-DEVICE seeding for an in-process pinned replica: CUDA RNG
+                        # state is per device, so two such replicas cannot trample each
+                        # other. Production does not take this branch — each spawned child
+                        # is its own process and uses torch.manual_seed above, exactly as a
+                        # workers=1 run does. (transformers' generate() rejects an explicit
+                        # `generator=` kwarg via _validate_model_kwargs, so a per-call
+                        # torch.Generator cannot be threaded through it.)
                         torch.cuda.manual_seed(seed)
                 gen_kwargs.update(do_sample=True, temperature=temperature, top_p=TEACHER_TOP_P)
             else:
@@ -2477,8 +2896,8 @@ def _load_split_base_rows(split, args):
 def _verify_rationale_row(base, rat, item):
     """Raise ValueError unless `rat` (a loaded rationale row) is a valid, bound,
     guardrail-passing rationale for `base` (a freshly rebuilt base row). The training
-    surface (messages/target) comes from ``base``; rationale text is accepted from the
-    file only after these checks. Returns the audit."""
+    surface (messages/target) comes from `base`; the rationale text is the ONLY thing
+    trusted from the file, and only after these checks (Codex #8). Returns the audit."""
     if rat.get("row_id") != base["row_id"]:
         raise ValueError(f"row_id mismatch {rat.get('row_id')!r} != {base['row_id']!r}")
     if rat.get("rationale_prompt_version") != RATIONALE_PROMPT_VERSION:
@@ -2501,8 +2920,10 @@ def _verify_rationale_row(base, rat, item):
     expected_cont = build_supervised_continuation(rationale, base["target"])
     if rat.get("supervised_continuation") != expected_cont:
         raise ValueError(f"{base['row_id']}: supervised_continuation does not reconstruct")
-    # Re-derive the teacher prompt from the rebuilt row and gold answer. Its digest proves
-    # the prompt used only q_m content, the gold letter, and Y_true—not q_h.
+    # Re-derive the canonical teacher prompt from the rebuilt row + gold answer and verify
+    # rationale_prompt_sha256 (Codex impl #1). This both makes provenance tamper-evident and
+    # re-proves the teacher prompt was built from the right inputs only (prompt + gold letter
+    # + Y_true; never q_h), independent of what the file claims.
     teacher_messages = build_teacher_messages(base, _gold_answer_text(item))
     if teacher_prompt_hash(teacher_messages) != rat.get("rationale_prompt_sha256"):
         raise ValueError(f"{base['row_id']}: rationale_prompt_sha256 mismatch "
@@ -2617,8 +3038,8 @@ def generate_rationales(args):
             rat = prior.get(base["row_id"])
             if rat is None:
                 continue
-            # Reuse only rows produced by the requested teacher and backend; the manifest
-            # must not relabel a row from another generation configuration.
+            # Provenance must match the CURRENT run (Codex impl #2): otherwise a row from a
+            # different teacher/backend would be reused but re-labelled by this run's manifest.
             if (rat.get("rationale_model") != args.teacher_model
                     or rat.get("rationale_backend") != args.teacher_backend):
                 continue  # different teacher config: regenerate
@@ -2718,10 +3139,14 @@ def resolve_rationales(base_rows, split, items, args):
                 f"(e.g. {stale[:3]}); refusing to risk teacher-forcing hidden CoT."
             )
         if supervision == SUPERVISION_ANSWER_ONLY:
+            # Diagnostic only. The two arms supervise DIFFERENT spans, so one wording
+            # cannot describe both: the native protocol has no final channel and ends
+            # the turn with <|eot_id|>, not with the harmony return token.
+            span = ("'Answer: X' + end-of-turn token" if native_of(args)
+                    else "final-channel scaffold + 'Answer: X' + return token")
             print(
                 f"[answer-only] {split}: no rationale supervision or artifacts; "
-                "supervised span = final-channel scaffold + 'Answer: X' + return token "
-                f"({len(base_rows)} rows)."
+                f"supervised span = {span} ({len(base_rows)} rows)."
             )
         else:
             print(f"[{supervision}] {split}: no rationale supervision or artifacts "
@@ -2850,12 +3275,20 @@ def _last_grounded_schema_block(decoded):
 
 
 def extract_grounded_teacher_output(decoded):
-    """Extract one strictly validated grounded block from a teacher completion.
+    """Tolerant extraction for the GROUNDED arm only (the rationale arm keeps its
+    final-channel-only path byte-for-byte).
 
-    Search, in order, the Harmony final channel, the analysis channel, and the last
-    schema-shaped four-line window in the raw completion. Return the first candidate that
-    passes ``parse_grounded_output``. If none passes, return the first non-empty candidate
-    so the audit records an informative failure reason.
+    The first HPC grounded run lost ~70% of attempts to an empty final channel. Where the
+    four lines are FOUND is now tolerant; what counts as valid is not — the strict parser
+    and all 17 audits are unchanged and run on whatever this returns. Order:
+
+      1. the harmony final channel (extract_final_channel) — the intended location;
+      2. the analysis channel (extract_analysis_channel) — the model reasoned the block
+         out but never opened a final channel, or ran out of tokens before it did;
+      3. a raw scan of the whole completion for the last schema-shaped 4-line window.
+
+    A candidate that parses wins immediately; otherwise the first non-empty candidate is
+    returned so the recorded failure reason still shows what the teacher actually said.
     """
     from judge_common import extract_analysis_channel, extract_final_channel
 
@@ -3213,11 +3646,15 @@ def build_grounded_record(item, rows_by_orientation, canonical_row, split_name, 
 
 
 def grounded_attempt_seed(row_id, attempt, epoch=0):
-    """Return the deterministic seed for one sampled grounded attempt.
+    """Seed for one SAMPLED grounded attempt.
 
-    Epoch zero uses the row/attempt identity. Retrying an unresolved record increments the
-    epoch so sampled attempts receive a new deterministic draw; temperature-zero attempts
-    remain unaffected.
+    Epoch 0 is the historical derivation, `_attempt_seed(row_id, attempt)`. A retry of an
+    UNRESOLVED record passes epoch >= 1, which salts the derivation: without it the
+    prompts AND the seeds would both be byte-identical to the previous run, so under the
+    deterministic transformers backend the retry would replay the same failures forever
+    and the "unresolved records are always retried" guarantee would be hollow. Greedy
+    attempts (seed None) are unaffected — replaying a greedy attempt deterministically is
+    expected; the epoch is what gives the two SAMPLED attempts genuinely new draws.
     """
     if epoch:
         return _attempt_seed(f"{row_id}|grounded-retry-{epoch}", attempt)
@@ -3325,11 +3762,15 @@ def _grounded_message_field(message, field):
 
 
 def _grounded_raw_completion(message):
-    """Rebuild Harmony channels from an OpenAI-shaped chat message.
+    """Rebuild the harmony string extract_grounded_teacher_output expects from an
+    OpenAI-shaped chat message.
 
-    API analysis text may arrive in ``reasoning_content`` rather than ``content``. Mark
-    both fields with their channel boundaries so grounded extraction applies the same
-    final-channel, analysis-channel, and raw-window priority as the Transformers path.
+    The tolerant extractor tries the final channel, then the ANALYSIS channel, then a raw
+    4-line scan — and the analysis fallback exists because the first HPC run lost ~70% of
+    attempts to a completion that never opened a final channel. Over the API that analysis
+    text arrives in `reasoning_content`, NOT in `content`, so returning bare content would
+    silently throw the fallback away. Re-marking both channels keeps the API path's
+    extraction priority identical to the transformers path's.
     """
     content = _grounded_message_field(message, "content") or ""
     reasoning = _grounded_message_field(message, "reasoning_content") or ""
@@ -3405,9 +3846,11 @@ class _GroundedApiClient:
 def _load_grounded_api_teacher(args, stats=None):
     """generate(messages, temperature, seed) -> grounded block, over HTTP.
 
-    Uses the same closure signature as the local teachers. ``stats`` records one call per
-    ladder attempt rather than per transport retry; elapsed seconds include retry backoff,
-    and generated-token counts come from API completion usage when available.
+    Same closure signature every other teacher returns, so _build_grounded_record_for_task
+    is shared verbatim by all three paths. `stats` accumulates one call per ladder attempt
+    (NOT per transport retry); `seconds` includes any backoff spent inside that attempt, and
+    `new_tokens` now comes from usage.completion_tokens, which the transformers path reads
+    off the generated tensor.
     """
     client = _GroundedApiClient(args.teacher_base_url, _teacher_api_key(args),
                                args.teacher_model, args.teacher_max_new_tokens)
@@ -3528,8 +3971,9 @@ def _grounded_child_main(payload, task_q, result_q):
     """
     device_index = payload["device_index"]
     try:
-        # Restrict visibility before importing torch so each child sees its assigned GPU
-        # as logical device 0 and uses the same single-replica loading path.
+        # BEFORE any torch import: the whole point of the process split. The child then
+        # sees exactly one GPU as device 0 and takes the historical single-GPU load and
+        # torch.manual_seed path, so its draws match a workers=1 run.
         os.environ["CUDA_VISIBLE_DEVICES"] = payload["visible_device"]
         args = argparse.Namespace(**payload["args"])
         cfg = payload["cfg"]
@@ -3646,8 +4090,9 @@ class _GroundedProgress:
     def busy_fraction(self):
         """Summed teacher-generate seconds / wall seconds.
 
-        With N workers this approaches N when all teachers are busy and approaches one
-        when generation is effectively serial.
+        With N workers this trends to N when they are all busy and toward 1 when they are
+        serialised — the direct read on whether process isolation actually bought
+        parallelism, which the old thread pool did not.
         """
         elapsed = self.elapsed
         return (self.generate_seconds / elapsed) if elapsed > 0 else 0.0
@@ -3752,11 +4197,13 @@ class GroundedRecordCorrupt(ValueError):
 
 
 class GroundedRecordStale(ValueError):
-    """The record is internally sound but does not match requested provenance.
+    """The record is internally sound but was produced under different PROVENANCE.
 
-    Prompt-version or audit-threshold drift, another teacher model/backend, or a teacher
-    prompt digest that cannot be re-derived makes the row regenerable during resume and
-    invalid for direct loading.
+    Regenerable, not corrupt: prompt-version drift, audit-threshold drift, a different
+    teacher model/backend, or a teacher_prompt_sha256 that no longer re-derives (which is
+    exactly what makes a teacher-prompt repair regenerate instead of reuse). A resume marks
+    these PENDING; the loader still treats them as fatal, because both classes subclass
+    ValueError and load_and_verify_grounded_records catches ValueError.
     """
 
 
@@ -3791,8 +4238,8 @@ def _verify_grounded_record(record, item, rows_by_orientation, split_name, story
     record for the freshly rebuilt rows. Re-runs EVERY audit; re-renders the analysis;
     re-derives the teacher prompt hash. The artifact is trusted for nothing.
 
-    Raises ``GroundedRecordCorrupt`` for fatal content defects or
-    ``GroundedRecordStale`` when resume may regenerate the row.
+    Raises GroundedRecordCorrupt (always fatal) or GroundedRecordStale (resume regenerates)
+    — both ValueError, so every existing caller keeps its current fail-closed behaviour.
     """
     try:
         grounded_content_hash(record)  # exact key set (raises with a precise message)
@@ -3901,9 +4348,9 @@ def _write_grounded_snapshot(path, records):
 
     Called after every accepted completion with every valid record known so far (reused +
     newly accepted), already sorted by canonical slot. Whole-file atomic replace rather
-    than append: an appended JSONL can be left with a torn final line by a crash, while
-    atomic replacement ensures a reader sees either the prior complete snapshot or the
-    replacement.
+    than append: an appended JSONL can be left with a torn final line by a crash, and the
+    next append then concatenates valid JSON onto that fragment and destroys the following
+    record. A reader here only ever sees a complete file — the old snapshot or the new one.
 
     Durability chain: write tmp -> flush -> fsync(tmp) -> os.replace -> fsync(parent dir).
     The directory fsync is best-effort (not every platform/filesystem supports it).
@@ -4010,7 +4457,7 @@ def _read_grounded_partial(path, order, items, split_name, story_by_index, cfg, 
                 f"{path}:{lineno}: record {record_id!r} is corrupt: {exc}"
             ) from exc
         if record.get("status") != "resolved":
-            # A verified unresolved row is pending; read its retry epoch only after audit.
+            # Verified unresolved: pending, and only NOW may its epoch be read.
             outcomes[dataset_index] = ("pending", record)
             stats["unresolved"] += 1
             continue
@@ -4306,8 +4753,9 @@ def generate_grounded(args):
             _run_grounded_thread_pool(
                 args, cfg, split_name, concurrency, pending, _accept, progress)
         elif pending and workers == 1:
-            # One local replica with no child queue; this also handles serial API
-            # generation when concurrency is one.
+            # Historical single-process path: one replica on the default device, no
+            # context, no child, no queue. Only the persistence primitive changed. Also
+            # serves the API backend at concurrency 1 (serial HTTP, same ladder).
             stats = {"calls": 0, "new_tokens": 0, "seconds": 0.0}
             generate_fn = _load_grounded_teacher(args, stats=stats)
             progress.start()
@@ -4340,7 +4788,7 @@ def generate_grounded(args):
     out_records = results
     if pending:
         print(progress.summary())
-    # Canonicalize the complete slot-ordered set with the durable snapshot primitive.
+    # Canonicalisation: the same durable primitive, now over the COMPLETE slot-ordered set.
     _write_grounded_snapshot(grounded_path, out_records)
     write_json_atomic(manifest_path,
                       _grounded_manifest(out_records, split, split_name, args, cfg, base_jsonl))
@@ -4769,8 +5217,9 @@ def build_supervised_continuation(rationale, target):
     The base gpt-oss judge emits analysis first, then starts a new assistant final
     channel. We supervise the whole transition: the per-example transcript-grounded
     `rationale` in the analysis channel, the final-channel header, "Answer: X", and the
-    return token. Production ``rationale`` content is per-example and non-constant;
-    ``ANALYSIS_TARGET`` is reserved for explicit smoke/tokenizer validation.
+    return token. `rationale` replaces the former fixed ANALYSIS_TARGET constant (now
+    only the --debug-constant-rationale value), so generated analysis is informative and
+    non-constant while the final-channel parser stays intact.
     """
     return (
         f"{ANALYSIS_CHANNEL_PREFIX}{rationale}"
@@ -4779,7 +5228,7 @@ def build_supervised_continuation(rationale, target):
 
 
 def _answer_only_continuation(target):
-    """Return the canonical answer-only continuation bytes."""
+    """Single source of truth for answer-only continuation bytes."""
     return f"{FINAL_CHANNEL_HEADER}{target}{RETURN_TOKEN}"
 
 
@@ -4841,6 +5290,278 @@ def supervised_continuation_template(supervision):
     if supervision == SUPERVISION_GROUNDED:
         return build_supervised_continuation("<grounded analysis>", target)
     raise RuntimeError(f"unknown supervision objective {supervision!r}")
+
+
+def build_native_continuation(target, public_analysis=None):
+    """The NATIVE student continuation for one row.
+
+    ``[PUBLIC analysis + "\n\n"] + "Answer: X" + <|eot_id|>``
+
+    ``public_analysis`` is the grounded adjudication (or, in the rationale arm, the
+    offline rationale text). On this family it is PUBLIC assistant prose in the same
+    turn as the verdict — there is no analysis channel to hide it in, and no caller may
+    describe it as a private CoT (judge_common.NATIVE_NO_PRIVATE_CHANNEL_NOTE).
+
+    This is a SEPARATE serializer: build_supervised_continuation and both of its
+    rationale-artifact callers keep emitting the frozen harmony string.
+    """
+    if not isinstance(target, str) or not target.startswith(NATIVE_ANSWER_PREFILL):
+        raise RuntimeError(
+            f"native target {target!r} must start with {NATIVE_ANSWER_PREFILL!r}"
+        )
+    # The target is the OTHER half of this serializer boundary. The prefix check above
+    # constrains only the first 8 characters, so "Answer: A<|python_tag|>" would be
+    # concatenated straight into a supervised turn. Scan the SAME 263 literals here,
+    # before any concatenation, and refuse identically. A substring scan -- not a
+    # tightened "Answer: [AB]" regex -- because native_continuation_template legitimately
+    # renders the generic metadata target "Answer: <A|B>", which is not a control literal.
+    for token in native_forbidden_literals():
+        if token in target:
+            raise RuntimeError(
+                f"native target contains the control token {token!r}; "
+                "refusing to serialize an injected turn boundary"
+            )
+    head = ""
+    if public_analysis is not None:
+        if not isinstance(public_analysis, str) or not public_analysis.strip():
+            raise RuntimeError("native public analysis must be non-empty text")
+        # EVERY control literal of the pin -- all 256 ids at 128000-128255, including
+        # the ones 3.1 repurposed (<|finetune_right_pad_id|> 128004,
+        # <|reserved_special_token_2|> 128005, <|eom_id|> 128008, <|python_tag|> 128010)
+        # -- plus the seven harmony scaffold strings. The 3.0-era five-token scan would
+        # have serialized a repurposed control straight into a supervised turn. Ordinary
+        # prose that merely contains "Answer:" is NOT a control literal and stays legal.
+        for token in native_forbidden_literals():
+            if token in public_analysis:
+                raise RuntimeError(
+                    f"native public analysis contains the control token {token!r}; "
+                    "refusing to serialize an injected turn boundary"
+                )
+        head = public_analysis + NATIVE_TARGET_SEPARATOR
+    return f"{head}{target}{NATIVE_EOT_TOKEN}"
+
+
+def native_continuation_template(supervision):
+    """Human-readable, literal native continuation contract for checkpoint metadata."""
+    target = "Answer: <A|B>"
+    if supervision == SUPERVISION_RATIONALE:
+        return build_native_continuation(target, "<rationale (PUBLIC)>")
+    if supervision == SUPERVISION_ANSWER_ONLY:
+        return build_native_continuation(target)
+    if supervision == SUPERVISION_GROUNDED:
+        return build_native_continuation(target, "<grounded analysis (PUBLIC)>")
+    raise RuntimeError(f"unknown supervision objective {supervision!r}")
+
+
+def continuation_template_for(supervision, family):
+    require_model_family(family)
+    return (native_continuation_template(supervision)
+            if family == MODEL_FAMILY_LLAMA3
+            else supervised_continuation_template(supervision))
+
+
+def native_control_ids(tokenizer):
+    """Canonical single ids for the native control tokens, derived from the tokenizer."""
+    ids_by_token = {}
+    for tok in NATIVE_CONTROL_TOKENS:
+        ids = tokenizer.encode(tok, add_special_tokens=False)
+        expected = tokenizer.convert_tokens_to_ids(tok)
+        if len(ids) != 1 or expected is None or ids[0] != expected:
+            raise RuntimeError(
+                f"native control token {tok!r} does not map to one canonical ID: "
+                f"encode={ids}, convert_tokens_to_ids={expected!r}"
+            )
+        ids_by_token[tok] = int(ids[0])
+    return ids_by_token
+
+
+def control_ids_for(tokenizer, family):
+    require_model_family(family)
+    return (native_control_ids(tokenizer) if family == MODEL_FAMILY_LLAMA3
+            else harmony_control_ids(tokenizer))
+
+
+_NATIVE_PROMPT_BASELINE = {}
+
+
+def native_prompt_control_baseline(tokenizer, roles, control_ids):
+    """Control-id counts + header token tail of a CONTROL-FREE render of these roles.
+
+    The native template emits a fixed control scaffold for a given role sequence (one
+    BOS, a header pair per turn, an EOT per closed turn), so rendering the SAME roles
+    with placeholder content that contains no control literal gives exactly the counts
+    an uninjected prompt must have. The baseline is DERIVED from the live template
+    rather than hardcoded, so a template change cannot silently pass. Memoised per
+    (tokenizer object, roles): the cached entry keeps a reference to the tokenizer it
+    was derived from and is only reused for that identical object.
+    """
+    roles = tuple(roles)
+    key = (id(tokenizer), roles)
+    cached = _NATIVE_PROMPT_BASELINE.get(key)
+    if cached is not None and cached[0] is tokenizer:
+        return cached[1]
+    probe_messages = [{"role": role, "content": f"probe {i}"}
+                      for i, role in enumerate(roles)]
+    probe_ids = _as_id_list(tokenizer.apply_chat_template(
+        probe_messages, tokenize=True, add_generation_prompt=True
+    ))
+    tail_ids = [int(i) for i in tokenizer(
+        native_protocol()["assistant_header"], add_special_tokens=False
+    ).input_ids]
+    if not tail_ids or probe_ids[-len(tail_ids):] != tail_ids:
+        raise RuntimeError(
+            "the native generation prompt does not end with the assistant header "
+            f"tokenized as {tail_ids}; the supervised/readout slot cannot be pinned."
+        )
+    baseline = {
+        "control_counts": native_control_id_counts(probe_ids, control_ids),
+        "generation_tail_ids": tail_ids,
+    }
+    _NATIVE_PROMPT_BASELINE[key] = (tokenizer, baseline)
+    return baseline
+
+
+def assert_native_prompt_token_structure(tokenizer, messages, prompt_ids, control_ids,
+                                         label="native prompt"):
+    """Prompt-SIDE injection guard for the native family (F9).
+
+    Candidate transcripts are adversarially generated and a literal "<|eot_id|>" in
+    message content is read back by the tokenizer as the REAL special id, which would
+    close the turn inside the prompt and move the supervised/readout slot. The harmony
+    arm's scaffold-uniqueness check does not transfer ("Answer:" is ordinary prose that
+    legitimately occurs inside these judge prompts), so this replaces it with:
+      * the shared message content/role contract (same helper the scorer calls, which
+        now covers all 256 control literals of the pin plus the 7 harmony strings), and
+      * control-id counts equal to a control-free render of the same roles, and
+      * NO other reserved control id anywhere in the rendered prompt: the count check
+        constrains only the five STRUCTURAL natives, so a repurposed or reserved id
+        (<|python_tag|>, <|eom_id|>, <|finetune_right_pad_id|>, <|reserved_special_*|>)
+        would otherwise be invisible at the id level, and
+      * the exact whole-BPE assistant-header token tail.
+    """
+    assert_native_message_boundary(messages, label=label)
+    baseline = native_prompt_control_baseline(
+        tokenizer, [m["role"] for m in messages], control_ids
+    )
+    prompt_ids = [int(i) for i in prompt_ids]
+    counts = native_control_id_counts(prompt_ids, control_ids)
+    if counts != baseline["control_counts"]:
+        raise RuntimeError(
+            f"{label}: rendered prompt does not have the control-token structure of "
+            f"{len(messages)} control-free turn(s): {counts!r} != "
+            f"{baseline['control_counts']!r}. A message carried a control token into "
+            "the prompt; refusing to render an injected native prompt."
+        )
+    unexpected_control_ids = sorted(
+        {i for i in prompt_ids
+         if LLAMA3_CONTROL_ID_BASE <= i < LLAMA3_CONTROL_ID_BASE + LLAMA3_CONTROL_ID_COUNT}
+        - {int(token_id) for token_id in control_ids.values()}
+    )
+    if unexpected_control_ids:
+        raise RuntimeError(
+            f"{label}: rendered prompt carries reserved control id(s) "
+            f"{unexpected_control_ids[:8]} that are not part of the native turn "
+            "structure. Refusing to render a prompt containing a repurposed or "
+            "reserved 3.1 control token."
+        )
+    tail = prompt_ids[-len(baseline["generation_tail_ids"]):]
+    if tail != baseline["generation_tail_ids"]:
+        raise RuntimeError(
+            f"{label}: rendered prompt does not end with the assistant header ids "
+            f"{baseline['generation_tail_ids']}; got {tail}."
+        )
+    return True
+
+
+def assert_native_model_pairing(model, tokenizer, max_len, expected_dtype=None):
+    """Post-load structural + padding-semantics contract for the native student.
+
+    The source identity itself is checked BEFORE loading by describe_model_source();
+    this proves the loaded OBJECT is what that identity promised - the expected model
+    class, a dense unquantized llama config, one consistent floating dtype - that it
+    agrees with the tokenizer that produced the labels, and that native padding
+    semantics were preserved: config.pad_token_id and the input embedding's
+    padding_idx MUST stay None. The collator pads with an existing token instead,
+    which keeps <|eot_id|> a supervised, gradient-receiving symbol.
+    """
+    config = model.config
+    cls_name = type(model).__name__
+    if cls_name not in LLAMA3_MODEL_CLASSES:
+        raise RuntimeError(
+            f"native student loaded as {cls_name!r}, not one of {LLAMA3_MODEL_CLASSES}; "
+            "refusing a different architecture at the native answer slot."
+        )
+    model_type = getattr(config, "model_type", None)
+    if model_type != "llama":
+        raise RuntimeError(
+            f"native student config.model_type is {model_type!r}, not 'llama'."
+        )
+    if getattr(config, "quantization_config", None) is not None:
+        raise RuntimeError(
+            "native student carries config.quantization_config; full FT requires an "
+            "unquantized base."
+        )
+    param_dtypes = sorted({str(p.dtype) for p in model.parameters()
+                           if p.is_floating_point()})
+    if len(param_dtypes) != 1:
+        raise RuntimeError(
+            f"native student has mixed floating parameter dtypes {param_dtypes}; "
+            "refusing an inconsistently cast model."
+        )
+    if expected_dtype is not None and param_dtypes[0] != str(expected_dtype):
+        raise RuntimeError(
+            f"native student parameters are {param_dtypes[0]} but this route loads "
+            f"{expected_dtype}; refusing a silently re-cast model."
+        )
+    vocab = getattr(config, "vocab_size", None)
+    if vocab is None or len(tokenizer) != int(vocab):
+        raise RuntimeError(
+            f"tokenizer/model vocab mismatch: len(tokenizer)={len(tokenizer)} vs "
+            f"config.vocab_size={vocab!r}; refusing a wrong tokenizer pairing."
+        )
+    embedding = model.get_input_embeddings()
+    rows = getattr(embedding, "num_embeddings", None)
+    if rows is not None and int(rows) != int(vocab):
+        raise RuntimeError(
+            f"input embedding has {rows} rows but config.vocab_size={vocab}; refusing a "
+            "resized or remapped native vocabulary."
+        )
+    if getattr(config, "pad_token_id", None) is not None:
+        raise RuntimeError(
+            f"native config.pad_token_id is {config.pad_token_id!r}; the pinned base "
+            "leaves it None. Setting it changes embedding padding semantics (a saved and "
+            "reloaded checkpoint would zero the end-of-turn input-embedding gradient)."
+        )
+    if getattr(embedding, "padding_idx", None) is not None:
+        raise RuntimeError(
+            f"native input embedding padding_idx is {embedding.padding_idx!r}; it must "
+            "stay None so the padded/terminal token embedding keeps receiving gradient."
+        )
+    context = int(getattr(config, "max_position_embeddings", 0) or 0)
+    if context < max_len:
+        raise RuntimeError(
+            f"native context window {context} < --max-len {max_len}; the audited rows "
+            "were budgeted against a larger window."
+        )
+    eot_id = native_control_ids(tokenizer)[NATIVE_EOT_TOKEN]
+    eos = getattr(config, "eos_token_id", None)
+    eos_ids = [int(eos)] if isinstance(eos, int) else [int(i) for i in (eos or [])]
+    if eos_ids and eot_id not in eos_ids:
+        raise RuntimeError(
+            f"native config end-of-sequence ids {eos_ids} do not include the supervised "
+            f"end-of-turn id {eot_id}."
+        )
+    return {
+        "vocab_size": int(vocab),
+        "context": context,
+        "eot_id": int(eot_id),
+        "config_eos_token_ids": eos_ids,
+        "config_pad_token_id": None,
+        "embedding_padding_idx": None,
+        "model_class": cls_name,
+        "model_type": model_type,
+        "parameter_dtype": param_dtypes[0],
+    }
 
 
 def harmony_control_ids(tokenizer):
@@ -5001,6 +5722,174 @@ def tokenize_with_target_mask(
     }
 
 
+def tokenize_with_target_mask_native(
+    messages,
+    rationale,
+    tokenizer,
+    max_len,
+    supervision=SUPERVISION_RATIONALE,
+    control_ids=None,
+    grounded_analysis=None,
+    prefill_ids=None,
+    letter_ids=None,
+):
+    """Native-student twin of tokenize_with_target_mask: no analysis channel.
+
+        prompt = apply_chat_template(messages[:-1], add_generation_prompt=True)
+        body   = [PUBLIC analysis + "\n\n"] + "Answer: X" + <|eot_id|>
+        labels = [-100] * len(prompt ids) ++ body ids
+
+    Everything before the assistant header is masked, exactly as in the harmony arm.
+    The analysis is PUBLIC assistant prose here, never a private channel.
+
+    BOTH supervised views are budgeted: the grounded/answer-only objective also scores
+    a DIRECT readout `prompt ids ++ "Answer:" ids` (no analysis in context), so a row
+    whose LM view fits but whose readout view would not is still a drop.
+    """
+    if control_ids is None:
+        control_ids = native_control_ids(tokenizer)
+    if prefill_ids is None:
+        prefill_ids = native_prefill_token_ids(tokenizer)
+    if letter_ids is None:
+        letter_ids = native_letter_token_ids(tokenizer)
+    prefill_ids = [int(i) for i in prefill_ids]
+    eot_id = int(control_ids[NATIVE_EOT_TOKEN])
+    # A --max-len larger than the project's readout budget does not widen the study:
+    # both native views are budgeted against min(requested, LLAMA3_READOUT_BUDGET=8192)
+    # (requirement 6). The 3.1 pin's 131072 ARCHITECTURE capacity is deliberately not
+    # used here -- the migration keeps the working window at 8192.
+    max_len = native_max_len(max_len)
+
+    prefix_text = tokenizer.apply_chat_template(
+        messages[:-1], tokenize=False, add_generation_prompt=True
+    )
+    if not prefix_text.endswith(NATIVE_GENERATION_PROMPT_SUFFIX):
+        raise RuntimeError(
+            "Unexpected native chat-template generation prompt suffix; expected it to "
+            f"end with {NATIVE_GENERATION_PROMPT_SUFFIX!r}, got tail {prefix_text[-120:]!r}."
+        )
+    target = messages[-1]["content"]
+    if target not in {"Answer: A", "Answer: B"}:
+        raise RuntimeError(f"unexpected assistant target {target!r}; expected Answer: A/B")
+    letter = target[-1]
+    if letter not in letter_ids:
+        raise RuntimeError(f"native target letter {letter!r} has no readout token id")
+
+    if supervision == SUPERVISION_RATIONALE:
+        public_analysis = rationale
+        if public_analysis is None:
+            raise RuntimeError("native rationale supervision requires a rationale")
+    elif supervision == SUPERVISION_GROUNDED:
+        public_analysis = grounded_analysis
+        if public_analysis is None:
+            raise RuntimeError(
+                "native grounded supervision requires a grounded analysis; unresolved "
+                "items fall back to the answer-only continuation in tokenize_rows()"
+            )
+    elif supervision == SUPERVISION_ANSWER_ONLY:
+        if rationale is not None or grounded_analysis is not None:
+            raise RuntimeError(
+                "native answer-only supervision must not carry analysis text; refusing "
+                "to mix supervision objectives"
+            )
+        public_analysis = None
+    else:
+        raise RuntimeError(f"unknown supervision objective {supervision!r}")
+
+    continuation = build_native_continuation(target, public_analysis)
+    full_text = prefix_text + continuation
+    direct_text = prefix_text + NATIVE_ANSWER_PREFILL
+
+    full_ids = [int(i) for i in tokenizer(full_text, add_special_tokens=False).input_ids]
+    prefix_ids = [int(i) for i in tokenizer(prefix_text, add_special_tokens=False).input_ids]
+    cont_ids = [int(i) for i in tokenizer(continuation, add_special_tokens=False).input_ids]
+    direct_ids = [int(i) for i in tokenizer(direct_text, add_special_tokens=False).input_ids]
+
+    # (0) PROMPT side: role/content contract + control-token structure of the rendered
+    # prompt, before any of the continuation contracts below (F9).
+    assert_native_prompt_token_structure(
+        tokenizer, messages[:-1], prefix_ids, control_ids,
+        label="native supervised prompt",
+    )
+
+    # (1) The supervised span is EXACTLY the standalone tokenization of the body, so the
+    # prompt is a true token prefix and no boundary token is half-supervised.
+    if full_ids != prefix_ids + cont_ids:
+        raise RuntimeError(
+            "Native supervised continuation token span does not match the standalone "
+            f"tokenization of the intended continuation (row target {target!r}); a "
+            "tokenizer boundary effect or a control token inside the analysis would "
+            "cause this."
+        )
+    # (2) The direct readout shares that same prompt prefix: readout and LM view can
+    # never drift apart.
+    if direct_ids != prefix_ids + prefill_ids:
+        raise RuntimeError(
+            "Native direct readout is not the audited prompt followed by the exact "
+            f"{NATIVE_ANSWER_PREFILL!r} ids; got tail {direct_ids[len(prefix_ids):]}, "
+            f"expected {prefill_ids}."
+        )
+    # (3) Token-level answer tail. NOTE: we deliberately do NOT compare against an
+    # independently encoded NATIVE_TARGET_SEPARATOR + NATIVE_ANSWER_PREFILL: a
+    # punctuation-ending analysis legitimately merges its last character with the blank
+    # line under BPE. The scored slot is the "Answer:" tail, and that is exact.
+    tail = cont_ids[-(len(prefill_ids) + NATIVE_READOUT_TAIL_TOKENS):]
+    expected_tail = prefill_ids + [int(letter_ids[letter]), eot_id]
+    if tail != expected_tail:
+        raise RuntimeError(
+            f"native continuation for {target!r} does not end with the exact "
+            f"{NATIVE_ANSWER_PREFILL!r} prefill + letter + EOT ids: got {tail}, "
+            f"expected {expected_tail}."
+        )
+    if cont_ids.count(eot_id) != 1:
+        raise RuntimeError(
+            f"native continuation contains {cont_ids.count(eot_id)} EOT ids; exactly one "
+            "terminal end-of-turn is supervised."
+        )
+    injected = sorted({int(i) for i in cont_ids[:-1]}
+                      & {int(v) for v in control_ids.values()})
+    if injected:
+        raise RuntimeError(
+            f"native continuation contains control token ids {injected} before its "
+            "terminal EOT; refusing to supervise an injected turn boundary."
+        )
+    if supervision == SUPERVISION_ANSWER_ONLY:
+        if cont_ids != expected_tail or len(cont_ids) > NATIVE_ANSWER_ONLY_MAX_CONT_TOKENS:
+            raise RuntimeError(
+                "native answer-only continuation is not exactly the direct "
+                f"{NATIVE_ANSWER_PREFILL!r} verdict scaffold (<= "
+                f"{NATIVE_ANSWER_ONLY_MAX_CONT_TOKENS} tokens): {cont_ids}"
+            )
+    elif supervision == SUPERVISION_GROUNDED and len(cont_ids) > GROUNDED_MAX_CONT_TOKENS:
+        raise RuntimeError(
+            f"grounded continuation is {len(cont_ids)} tokens > "
+            f"{GROUNDED_MAX_CONT_TOKENS}; the audited analysis length cap "
+            f"({GROUNDED_MAX_CHARS} chars) should make this impossible"
+        )
+
+    # (4) Per-view budget: the readout also needs room for the letter it is scored on.
+    if max(len(full_ids), len(direct_ids) + NATIVE_READOUT_TAIL_TOKENS) > max_len:
+        return None
+
+    labels = list(full_ids)
+    for i in range(len(prefix_ids)):
+        labels[i] = -100
+    if all(l == -100 for l in labels):
+        return None
+    kept = [t for t, label in zip(full_ids, labels) if label != -100]
+    if kept != cont_ids:
+        raise RuntimeError(
+            "unmasked label token IDs do not exactly equal the intended continuation "
+            f"for native {supervision} supervision"
+        )
+    return {
+        "input_ids": full_ids,
+        "attention_mask": [1] * len(full_ids),
+        "labels": labels,
+        "continuation_ids": cont_ids,
+    }
+
+
 class PadCollator:
     """Right-pad a batch of pre-tokenized examples. Pad tokens get attention_mask 0
     and label -100 so they never contribute to the loss."""
@@ -5025,23 +5914,80 @@ class PadCollator:
         }
 
 
+def _check_native_label_span(index, sample, kept, tokenizer, supervision):
+    """Decoded native mask audit: optional PUBLIC analysis, one terminal verdict, EOT."""
+    kept_text = tokenizer.decode(kept, skip_special_tokens=False)
+    if not kept_text.endswith(NATIVE_EOT_TOKEN):
+        raise RuntimeError(
+            f"example {index}: native supervised span does not end with "
+            f"{NATIVE_EOT_TOKEN!r}: {kept_text[-80:]!r}"
+        )
+    body = kept_text[: -len(NATIVE_EOT_TOKEN)]
+    # Same 263-literal set as the serializer (256 official controls + 7 harmony), so a
+    # repurposed 3.1 control decoded back out of the label span is a hard failure.
+    for token in native_forbidden_literals():
+        if token in body:
+            raise RuntimeError(
+                f"example {index}: native supervised span contains the control token "
+                f"{token!r} before its terminal end-of-turn"
+            )
+    lines = [line for line in body.split("\n") if line.strip()]
+    if not lines or re.fullmatch(r"Answer: [AB]", lines[-1]) is None or not body.endswith(lines[-1]):
+        raise RuntimeError(
+            f"example {index}: native supervised span does not end with an exact "
+            f"'Answer: A/B' verdict line: {body[-80:]!r}"
+        )
+    analysis = body[: -len(lines[-1])]
+    if supervision == SUPERVISION_ANSWER_ONLY or not analysis:
+        # Grounded fallback rows (unresolved items under --grounded-unresolved
+        # answer-only) legitimately carry the bare verdict continuation.
+        if analysis:
+            raise RuntimeError(
+                f"example {index}: native answer-only span carries analysis text "
+                f"{analysis!r}"
+            )
+        print(
+            f"Mask check OK (example {index}): {len(kept)}/{len(sample['input_ids'])} "
+            f"tokens trained; span={kept_text!r}"
+        )
+        return
+    if not analysis.endswith(NATIVE_TARGET_SEPARATOR):
+        raise RuntimeError(
+            f"example {index}: native analysis is not separated from the verdict by "
+            f"{NATIVE_TARGET_SEPARATOR!r}: tail {analysis[-20:]!r}"
+        )
+    analysis = analysis[: -len(NATIVE_TARGET_SEPARATOR)]
+    if supervision == SUPERVISION_GROUNDED:
+        if "Answer:" in analysis:
+            raise RuntimeError(
+                f"example {index}: grounded analysis contains 'Answer:'; the verdict "
+                "belongs only in the terminal line and the analysis must be "
+                "orientation-invariant"
+            )
+        assert_rendered_analysis_shape(analysis)
+    print(
+        f"Mask check OK (example {index}): {len(kept)}/{len(sample['input_ids'])} "
+        f"tokens trained; PUBLIC analysis[:70]={analysis.strip()[:70]!r}"
+    )
+
+
 def _check_unmasked_label_spans(
     ds,
     tokenizer,
     n=3,
     seed=0,
     supervision=SUPERVISION_RATIONALE,
+    family=MODEL_FAMILY_GPT_OSS,
 ):
-    """Audit that the unmasked label span exactly equals the intended continuation.
-
-    The span must match the
+    """Token-level mask audit (Codex #5). The unmasked label span must EQUAL the
     intended continuation token IDs (carried on the record as `continuation_ids`), plus
     structural sanity. Decoded text additionally proves that answer-only has no analysis
     channel and no semantic content besides the A/B verdict."""
 
     rng = random.Random(seed)
     idxs = rng.sample(range(len(ds)), min(n, len(ds)))
-    channel_id = harmony_control_ids(tokenizer)["<|channel|>"]
+    native = family == MODEL_FAMILY_LLAMA3
+    channel_id = None if native else harmony_control_ids(tokenizer)["<|channel|>"]
     for i in idxs:
         sample = ds[i]
         kept = [t for t, l in zip(sample["input_ids"], sample["labels"]) if l != -100]
@@ -5058,6 +6004,9 @@ def _check_unmasked_label_spans(
                 f"intended continuation IDs ({len(cont_ids)}); the mask is misaligned with "
                 "the supervised continuation."
             )
+        if native:
+            _check_native_label_span(i, sample, kept, tokenizer, supervision)
+            continue
         if kept[0] != channel_id:
             raise RuntimeError(
                 f"example {i}: first supervised token id {kept[0]} != <|channel|> id "
@@ -5131,12 +6080,23 @@ def tokenize_rows(
     tokenizer,
     max_len,
     supervision=SUPERVISION_RATIONALE,
+    family=MODEL_FAMILY_GPT_OSS,
 ):
-    """Tokenize with the supervised harmony-continuation mask. ANY drop is data
+    """Tokenize with the supervised continuation mask of `family`. ANY drop is data
     corruption (prompts are ~2k tokens << max_len) and silently unbalances paired
     orientations — so we fail, not warn."""
     tokenized, dropped = [], []
-    control_ids = harmony_control_ids(tokenizer)
+    native = family == MODEL_FAMILY_LLAMA3
+    control_ids = control_ids_for(tokenizer, family)
+    tokenize_one = tokenize_with_target_mask_native if native else tokenize_with_target_mask
+    native_kwargs = (
+        {
+            "prefill_ids": native_prefill_token_ids(tokenizer),
+            "letter_ids": native_letter_token_ids(tokenizer),
+        }
+        if native
+        else {}
+    )
     for row in rows:
         if supervision == SUPERVISION_RATIONALE and "rationale" not in row:
             raise RuntimeError(f"row {row['row_id']} has no resolved rationale — call "
@@ -5163,7 +6123,7 @@ def tokenize_rows(
         row_supervision = supervision
         if supervision == SUPERVISION_GROUNDED and grounded_analysis is None:
             row_supervision = SUPERVISION_ANSWER_ONLY
-        rec = tokenize_with_target_mask(
+        rec = tokenize_one(
             row["messages"],
             rationale,
             tokenizer,
@@ -5171,6 +6131,7 @@ def tokenize_rows(
             supervision=row_supervision,
             control_ids=control_ids,
             grounded_analysis=grounded_analysis,
+            **native_kwargs,
         )
         if rec is None:
             dropped.append(row["row_id"])
@@ -5184,6 +6145,8 @@ def tokenize_rows(
             f"{len(dropped)} rows exceeded max_len={max_len} (e.g. {dropped[:3]}) — "
             "this should be impossible for these verifier judge prompts and would break "
             "the paired-orientation balance. Investigate before training."
+            + (" Native rows are budgeted for BOTH the LM view and the direct readout "
+               "view, so either one can trip this." if native else "")
         )
     return tokenized
 
@@ -5269,6 +6232,88 @@ def assert_qy_answer_slot_letter_tokens(tokenizer, letter_ids, control_ids=None,
     return lengths.pop()
 
 
+def assert_native_qy_answer_slot_letter_tokens(tokenizer, letter_ids, control_ids=None,
+                                              prefill_ids=None):
+    """Native twin of assert_qy_answer_slot_letter_tokens.
+
+    The native answer-only continuation is "Answer: X" + <|eot_id|>, so the token before
+    EOT must be exactly the ' A'/' B' id the q_h readout scores. Returns the (constant)
+    answer-only continuation length C.
+    """
+    if control_ids is None:
+        control_ids = native_control_ids(tokenizer)
+    if prefill_ids is None:
+        prefill_ids = native_prefill_token_ids(tokenizer)
+    prefill_ids = [int(i) for i in prefill_ids]
+    eot_id = int(control_ids[NATIVE_EOT_TOKEN])
+    lengths = set()
+    for letter, token_id in letter_ids.items():
+        continuation = build_native_continuation(TARGET_TEMPLATE.format(letter=letter))
+        cont_ids = [int(i) for i in tokenizer(continuation, add_special_tokens=False).input_ids]
+        if len(cont_ids) < 2 or cont_ids[-1] != eot_id:
+            raise RuntimeError(
+                f"native answer-only continuation for {letter!r} does not end with "
+                f"{NATIVE_EOT_TOKEN} (ids={cont_ids})"
+            )
+        if int(cont_ids[-2]) != int(token_id):
+            raise RuntimeError(
+                f"Q_Y answer-slot letter token for {letter!r} is {cont_ids[-2]}, but the Q_H "
+                f"readout would score {token_id}. The auxiliary loss must act on the SAME "
+                "output symbol the Q_Y arm supervises."
+            )
+        expected = prefill_ids + [int(token_id), eot_id]
+        if cont_ids != expected:
+            raise RuntimeError(
+                f"native answer-only continuation for {letter!r} is not exactly the "
+                f"{NATIVE_ANSWER_PREFILL!r} prefill followed by its single letter and "
+                f"{NATIVE_EOT_TOKEN}: got {cont_ids}, expected {expected}."
+            )
+        lengths.add(len(cont_ids))
+    if len(lengths) != 1:
+        raise RuntimeError(
+            f"native answer-only continuation length differs between A and B "
+            f"({sorted(lengths)}); the pure-arm loss normalization would depend on the label."
+        )
+    return lengths.pop()
+
+
+def letter_token_ids_for(tokenizer, family):
+    """' A'/' B' readout ids. Both families read LABEL_COMPLETIONS from score_verifier."""
+    require_model_family(family)
+    return (native_letter_token_ids(tokenizer) if family == MODEL_FAMILY_LLAMA3
+            else qh_letter_token_ids(tokenizer))
+
+
+def prefill_token_ids_for(tokenizer, family, control_ids=None):
+    require_model_family(family)
+    return (native_prefill_token_ids(tokenizer) if family == MODEL_FAMILY_LLAMA3
+            else qh_prefill_token_ids(tokenizer, control_ids))
+
+
+def prefill_text_for(family):
+    require_model_family(family)
+    return (NATIVE_ANSWER_PREFILL if family == MODEL_FAMILY_LLAMA3
+            else FINAL_CHANNEL_PREFILL)
+
+
+def terminal_token_id_for(control_ids, family):
+    """The single token that closes a supervised continuation on this family."""
+    require_model_family(family)
+    return int(control_ids[NATIVE_EOT_TOKEN] if family == MODEL_FAMILY_LLAMA3
+               else control_ids[RETURN_TOKEN])
+
+
+def assert_answer_slot_letter_tokens_for(tokenizer, letter_ids, control_ids=None,
+                                         prefill_ids=None,
+                                         family=MODEL_FAMILY_GPT_OSS):
+    require_model_family(family)
+    if family == MODEL_FAMILY_LLAMA3:
+        return assert_native_qy_answer_slot_letter_tokens(
+            tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids)
+    return assert_qy_answer_slot_letter_tokens(
+        tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids)
+
+
 def count_subsequence(haystack, needle):
     """Number of (overlapping) occurrences of `needle` inside `haystack`."""
     needle = list(needle)
@@ -5280,13 +6325,25 @@ def count_subsequence(haystack, needle):
 
 
 def assemble_readout_input_ids(prompt_ids, prefill_ids, max_len, letter_token_ids=(),
-                               label="forced-choice"):
+                               label="forced-choice", require_unique_prefill=True,
+                               native=False):
     """Pure ID-level assembly shared by q_m and q_h forced-choice readouts.
 
     input = chat-template user generation prompt IDs ++ final-channel prefill IDs.
     Fails CLOSED on length (a dropped leg would silently unbalance the pairs),
-    asserts the prefill is the suffix and occurs EXACTLY ONCE, and asserts that no
-    answer letter was appended.
+    asserts the prefill is the suffix, and asserts that no answer letter was appended.
+
+    `require_unique_prefill` additionally asserts the prefill occurs EXACTLY ONCE, which
+    detects a harmony control scaffold leaking into the user prompt. Callers MUST pass
+    False for the native family: its prefill is ordinary prose ("Answer:") that already
+    occurs inside these judge prompts, so uniqueness is not a corruption signal there.
+
+    `native=True` applies the native budget: the limit is min(requested,
+    LLAMA3_READOUT_BUDGET=8192) -- the project's WORKING readout budget, not whatever
+    --max-len asked for and not the 3.1 pin's 131072 architecture capacity -- and the
+    scored letter plus its terminal EOT must still fit, exactly as in the scorer's
+    readout headroom check (NATIVE_READOUT_TAIL_TOKENS is the SAME constant). The
+    harmony budget is unchanged.
     """
     prompt_ids = [int(i) for i in prompt_ids]
     prefill_ids = [int(i) for i in prefill_ids]
@@ -5295,6 +6352,17 @@ def assemble_readout_input_ids(prompt_ids, prefill_ids, max_len, letter_token_id
     if not prompt_ids:
         raise RuntimeError(f"empty {label} prompt ids")
     ids = prompt_ids + prefill_ids
+    if native:
+        max_len = native_max_len(max_len)
+        if len(ids) + NATIVE_READOUT_TAIL_TOKENS > max_len:
+            raise RuntimeError(
+                f"{label} native readout input is {len(ids)} tokens and the scored "
+                f"letter plus its terminal EOT need {NATIVE_READOUT_TAIL_TOKENS} more, "
+                f"but the native limit is {max_len} (requested max_len capped at the "
+                f"working readout budget {LLAMA3_READOUT_BUDGET}; the architecture "
+                f"capacity {LLAMA3_CONTEXT} is NOT the budget). Dropping it would "
+                "unbalance the paired legs, so this fails closed."
+            )
     if len(ids) > max_len:
         raise RuntimeError(
             f"{label} readout input is {len(ids)} tokens > max_len={max_len}. Dropping it would "
@@ -5305,13 +6373,14 @@ def assemble_readout_input_ids(prompt_ids, prefill_ids, max_len, letter_token_id
         raise RuntimeError(
             f"final-channel prefill is not the tokenized suffix of the {label} input"
         )
-    occurrences = count_subsequence(ids, prefill_ids)
-    if occurrences != 1:
-        raise RuntimeError(
-            f"final-channel prefill appears {occurrences} times in the {label} input; it must "
-            "appear exactly once, at the very end (a duplicate means the scaffold leaked "
-            "into the user prompt)."
-        )
+    if require_unique_prefill:
+        occurrences = count_subsequence(ids, prefill_ids)
+        if occurrences != 1:
+            raise RuntimeError(
+                f"final-channel prefill appears {occurrences} times in the {label} input; it must "
+                "appear exactly once, at the very end (a duplicate means the scaffold leaked "
+                "into the user prompt)."
+            )
     for token_id in letter_token_ids:
         if ids[-1] == int(token_id):
             raise RuntimeError(
@@ -5321,10 +6390,12 @@ def assemble_readout_input_ids(prompt_ids, prefill_ids, max_len, letter_token_id
     return {"input_ids": ids, "attention_mask": [1] * len(ids)}
 
 
-def assemble_qh_input_ids(prompt_ids, prefill_ids, max_len, letter_token_ids=()):
-    """Return the shared readout assembly under q_h-specific field names."""
+def assemble_qh_input_ids(prompt_ids, prefill_ids, max_len, letter_token_ids=(),
+                          require_unique_prefill=True, native=False):
+    """Backward-compatible q_h-key wrapper around the shared readout assembler."""
     rec = assemble_readout_input_ids(
-        prompt_ids, prefill_ids, max_len, letter_token_ids, label="Q_H"
+        prompt_ids, prefill_ids, max_len, letter_token_ids, label="Q_H",
+        require_unique_prefill=require_unique_prefill, native=native,
     )
     return {
         "qh_input_ids": rec["input_ids"],
@@ -5348,14 +6419,17 @@ def _as_id_list(encoded):
 
 
 def attach_qy_forced_choice_readouts(rows, tokenized_rows, prefill_ids, letter_ids,
-                                     return_token_id, max_len):
+                                     return_token_id, max_len,
+                                     family=MODEL_FAMILY_GPT_OSS):
     """Attach a no-letter q_m readout derived from each audited tokenized training row.
 
     The answer-only continuation is structurally pinned to
-    FINAL_CHANNEL_PREFILL ++ [target letter] ++ [RETURN_TOKEN]. Removing exactly the
-    final two tokens therefore exposes the same answer slot used by q_h without
-    re-rendering the prompt or independently deriving its target.
+    prefill ++ [target letter] ++ [terminal token] — FINAL_CHANNEL_PREFILL/<|return|> on
+    the harmony family, NATIVE_ANSWER_PREFILL/<|eot_id|> on the native one. Removing
+    exactly the final two tokens therefore exposes the same answer slot used by q_h
+    without re-rendering the prompt or independently deriving its target.
     """
+    native = family == MODEL_FAMILY_LLAMA3
     if len(rows) != len(tokenized_rows):
         raise RuntimeError(
             f"Q_Y forced-choice attachment got {len(rows)} source rows but "
@@ -5412,6 +6486,8 @@ def attach_qy_forced_choice_readouts(rows, tokenized_rows, prefill_ids, letter_i
             max_len,
             letter_token_ids=tuple(letter_ids.values()),
             label="Q_Y",
+            require_unique_prefill=not native,
+            native=native,
         )
         expected_readout_ids = full_ids[:-QY_READOUT_TAIL_TOKENS]
         if readout["input_ids"] != expected_readout_ids:
@@ -5427,13 +6503,14 @@ def attach_qy_forced_choice_readouts(rows, tokenized_rows, prefill_ids, letter_i
 
 
 def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_ids,
-                                    return_token_id, max_len):
+                                    return_token_id, max_len,
+                                    family=MODEL_FAMILY_GPT_OSS):
     """Attach the DIRECT (analysis-free) q_m forced-choice readout to grounded rows.
 
     Unlike the answer-only arm — where the readout is the audited input minus its last two
-    tokens — a grounded row's continuation carries the analysis channel, so the readout is
-    rebuilt as `chat prompt ids ++ FINAL_CHANNEL_PREFILL ids`: the model must commit to a
-    letter with NO analysis in context. The prompt prefix is taken from the audited
+    tokens — a grounded row's continuation carries the analysis, so the readout is
+    rebuilt as `chat prompt ids ++ prefill ids`: the model must commit to a letter with
+    NO analysis in context. The prompt prefix is taken from the audited
     tokenized row (tokenize_with_target_mask already proved it is a token prefix of the
     full input), and the target letter comes from the audited row, cross-checked against
     the token the LM view supervises at the answer slot.
@@ -5450,6 +6527,7 @@ def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_id
     if len(inverse_letter_ids) != 2:
         raise RuntimeError(f"grounded letter ids are not distinct: {letter_ids!r}")
     prefill_ids = [int(i) for i in prefill_ids]
+    native = family == MODEL_FAMILY_LLAMA3
 
     for rec in tokenized_rows:
         row_id = rec.get("row_id")
@@ -5471,14 +6549,15 @@ def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_id
                 f"grounded row {row_id} has target letter {target_letter!r}"
             )
         # Contract: whatever the analysis, the continuation TAIL is exactly the
-        # final-channel prefill, the target letter, and the return token — the slot the
-        # production readout scores.
+        # prefill, the target letter, and the terminal token — the slot the production
+        # readout scores. (Native rows deliberately compare only this "Answer:" tail:
+        # BPE may merge a punctuation-ending analysis with the blank-line separator.)
         tail = cont_ids[-(len(prefill_ids) + QY_READOUT_TAIL_TOKENS):]
         expected_tail = prefill_ids + [int(letter_ids[target_letter]), int(return_token_id)]
         if tail != expected_tail:
             raise RuntimeError(
                 f"grounded row {row_id} continuation does not end with the exact "
-                f"final-channel prefill + letter + return ids: got {tail}, expected "
+                f"prefill + letter + terminal ids: got {tail}, expected "
                 f"{expected_tail}"
             )
         token_letter = inverse_letter_ids.get(cont_ids[-2])
@@ -5494,6 +6573,8 @@ def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_id
             max_len,
             letter_token_ids=tuple(letter_ids.values()),
             label="grounded Q_Y",
+            require_unique_prefill=not native,
+            native=native,
         )
         rec["qy_readout_input_ids"] = readout["input_ids"]
         rec["qy_readout_attention_mask"] = readout["attention_mask"]
@@ -5533,31 +6614,49 @@ def assert_qy_chat_template_tokenization_parity(rows, tokenized_rows, tokenizer,
             )
 
 
-def tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids):
+def tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids,
+                    family=MODEL_FAMILY_GPT_OSS):
     """Tokenize one q_h readout row exactly like the production forced-choice scorer."""
     messages = row["messages"]
     if len(messages) != 1 or messages[0].get("role") != "user":
         raise RuntimeError(f"Q_H row {row['row_id']} is not a single user message")
+    native = family == MODEL_FAMILY_LLAMA3
+    generation_suffix = (NATIVE_GENERATION_PROMPT_SUFFIX if native
+                         else GENERATION_PROMPT_SUFFIX)
     prefix_text = tokenizer.apply_chat_template(
         messages, tokenize=False, add_generation_prompt=True
     )
-    if not prefix_text.endswith(GENERATION_PROMPT_SUFFIX):
+    if not prefix_text.endswith(generation_suffix):
         raise RuntimeError(
             "Unexpected chat-template generation prompt suffix for the Q_H readout; expected "
-            f"it to end with {GENERATION_PROMPT_SUFFIX!r}, got tail {prefix_text[-120:]!r}."
+            f"it to end with {generation_suffix!r}, got tail {prefix_text[-120:]!r}."
         )
-    if prefix_text.endswith(FINAL_CHANNEL_PREFILL):
+    if not native and prefix_text.endswith(FINAL_CHANNEL_PREFILL):
         raise RuntimeError(
             "Chat template already prefilled the final channel; do not append "
             "FINAL_CHANNEL_PREFILL as well."
+        )
+    if native and prefix_text.endswith(NATIVE_ANSWER_PREFILL):
+        raise RuntimeError(
+            "Native chat template already ends with the readout prefill "
+            f"{NATIVE_ANSWER_PREFILL!r}; do not append it twice."
         )
     # tokenize=True mirrors ForcedChoiceVerifier.prompt_ids exactly (the production
     # readout never re-tokenizes the rendered string).
     prompt_ids = _as_id_list(
         tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
     )
+    if native:
+        # Prompt-side injection guard (F9): the q_h prompt embeds a candidate transcript
+        # too, and it is rendered by the SAME template the scorer uses.
+        control_ids = native_control_ids(tokenizer)
+        assert_native_prompt_token_structure(
+            tokenizer, messages, prompt_ids, control_ids,
+            label=f"native Q_H readout prompt (row {row['row_id']!r})",
+        )
     rec = assemble_qh_input_ids(prompt_ids, prefill_ids, max_len,
-                                letter_token_ids=tuple(letter_ids.values()))
+                                letter_token_ids=tuple(letter_ids.values()),
+                                require_unique_prefill=not native, native=native)
     if row["target_letter"] not in ("A", "B"):
         raise RuntimeError(f"Q_H row {row['row_id']} has target letter {row['target_letter']!r}")
     rec["qh_target_index"] = 0 if row["target_letter"] == "A" else 1
@@ -5567,23 +6666,27 @@ def tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids):
     return rec
 
 
-def tokenize_qh_rows(rows, tokenizer, max_len, prefill_ids, letter_ids):
-    return [tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids) for row in rows]
+def tokenize_qh_rows(rows, tokenizer, max_len, prefill_ids, letter_ids,
+                     family=MODEL_FAMILY_GPT_OSS):
+    return [tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids, family=family)
+            for row in rows]
 
 
 def _check_readout_spans(records, tokenizer, input_ids_key, target_letter_key,
-                         label, n=3, seed=0):
+                         label, n=3, seed=0, family=MODEL_FAMILY_GPT_OSS):
     """Decode sampled forced-choice tails; every input must end before the letter."""
     rng = random.Random(seed)
     idxs = rng.sample(range(len(records)), min(n, len(records)))
+    expected_prefill = (NATIVE_ANSWER_PREFILL if family == MODEL_FAMILY_LLAMA3
+                        else FINAL_CHANNEL_PREFILL)
     for i in idxs:
         rec = records[i]
         tail_ids = rec[input_ids_key][-24:]
         tail = tokenizer.decode(tail_ids, skip_special_tokens=False)
-        if not tail.endswith(FINAL_CHANNEL_PREFILL):
+        if not tail.endswith(expected_prefill):
             raise RuntimeError(
-                f"{label} example {i} ({rec['row_id']}) does not end at the final-channel answer "
-                f"slot; tail={tail!r}"
+                f"{label} example {i} ({rec['row_id']}) does not end at the answer "
+                f"slot {expected_prefill!r}; tail={tail!r}"
             )
         if tail.endswith(tuple(LABEL_COMPLETIONS.values())):
             raise RuntimeError(
@@ -5594,25 +6697,28 @@ def _check_readout_spans(records, tokenizer, input_ids_key, target_letter_key,
               f"{LABEL_COMPLETIONS[rec[target_letter_key]]!r}, tail={tail[-60:]!r}")
 
 
-def _check_qh_readout_spans(records, tokenizer, n=3, seed=0):
+def _check_qh_readout_spans(records, tokenizer, n=3, seed=0,
+                            family=MODEL_FAMILY_GPT_OSS):
     return _check_readout_spans(
-        records, tokenizer, "qh_input_ids", "qh_target_letter", "Q_H", n=n, seed=seed
+        records, tokenizer, "qh_input_ids", "qh_target_letter", "Q_H", n=n, seed=seed,
+        family=family,
     )
 
 
-def _check_qy_readout_spans(records, tokenizer, n=3, seed=0):
+def _check_qy_readout_spans(records, tokenizer, n=3, seed=0,
+                            family=MODEL_FAMILY_GPT_OSS):
     return _check_readout_spans(
         records, tokenizer, "qy_readout_input_ids", "qy_target_letter", "Q_Y",
-        n=n, seed=seed,
+        n=n, seed=seed, family=family,
     )
 
 
 def constant_continuation_tokens(tokenized_rows):
     """C = the audited answer-only continuation length, which MUST be constant.
 
-    In forced-choice mode C is a structural check proving every q_m row has the same
-    prefill, letter, and return tail. In token-CE mode it also fixes the loss
-    normalization denominator.
+    In forced-choice mode C is only a structural contract proving every q_m row has
+    the same prefill + letter + return tail; it is not a loss denominator. In legacy
+    token-ce mode it additionally pins the historical normalization.
     """
     lengths = {len(r["continuation_ids"]) for r in tokenized_rows}
     if len(lengths) != 1:
@@ -5627,12 +6733,42 @@ def constant_continuation_tokens(tokenized_rows):
 def check_tokenizer(args):
     from transformers import AutoTokenizer
 
+    family = model_family_of(args)
+    native = family == MODEL_FAMILY_LLAMA3
+    load_kwargs = {}
+    if native:
+        # The native student has no prepared-bf16 stage: audit the SAME pinned source
+        # train/ForcedChoiceVerifier use, through the SAME independent resolver, so the
+        # three components cannot drift (F12). describe_model_source rejects a
+        # contradictory explicit revision, an arbitrary llama, a modified official
+        # asset, an unknown checkpoint protocol and a replaced tokenizer BEFORE the
+        # tokenizer is loaded; the structural A/B probe below cannot see any of those.
+        source = model_name_of(args)
+        revision = model_revision_of(args)
+        # --check-tokenizer is deliberately weight-free: it audits identity and
+        # tokenization, so a canonical small-asset materialisation with no shards is
+        # admissible here even though train and scoring both require real weights.
+        source_info = describe_model_source(
+            source, family=family, revision=revision, require_weights=False
+        )
+        # A local directory carries its own bytes; passing revision= for a path would be
+        # meaningless (and is refused above unless it IS the canonical pin).
+        if revision and not os.path.isdir(source):
+            load_kwargs["revision"] = revision
+        label = source_info["descriptor"]
+        fingerprint = (source_info.get("tokenizer_fingerprint") or {}).get("sha256")
+        print(f"Native student source: {label} [{source_info['identity']}] "
+              f"path={source_info['source_path']} incarnation "
+              f"{source_info['incarnation_sha256'][:12]}"
+              + (f" tokenizer {fingerprint[:12]}" if fingerprint else ""))
     # A stale/empty prepared-base directory must not shadow the hub tokenizer during
     # this tokenizer-only audit (train/preflight separately requires a real config.json).
-    if os.path.isfile(os.path.join(BF16_DIR, "tokenizer_config.json")):
+    elif os.path.isfile(os.path.join(BF16_DIR, "tokenizer_config.json")):
         source = BF16_DIR
+        label = source
     else:
         source = MODEL_NAME
+        label = source
         if os.path.isdir(BF16_DIR):
             print(
                 f"WARNING: {BF16_DIR} exists but has no tokenizer_config.json; "
@@ -5640,11 +6776,18 @@ def check_tokenizer(args):
                 "preflight will still reject an incomplete prepared base.",
                 file=sys.stderr,
             )
-    print(f"Loading tokenizer from {source} ...")
-    tokenizer = AutoTokenizer.from_pretrained(source)
+    if getattr(args, "local_files_only", False):
+        load_kwargs["local_files_only"] = True
+    print(f"Loading tokenizer from {label} ...")
+    tokenizer = AutoTokenizer.from_pretrained(source, **load_kwargs)
     if tokenizer.pad_token is None:
+        # Collator padding only: the model config pad id and embedding padding_idx are
+        # deliberately left untouched (see train()).
         tokenizer.pad_token = tokenizer.eos_token
-    control_ids = harmony_control_ids(tokenizer)
+    if native:
+        assert_native_tokenizer_identity(tokenizer)
+    control_ids = control_ids_for(tokenizer, family)
+    prefill_text = prefill_text_for(family)
 
     tokenized = []
     all_base_rows = []
@@ -5662,6 +6805,7 @@ def check_tokenizer(args):
                 tokenizer,
                 args.max_len,
                 supervision=supervision,
+                family=family,
             )
         )
     lengths = sorted(len(t["input_ids"]) for t in tokenized)
@@ -5672,6 +6816,7 @@ def check_tokenizer(args):
         tokenizer,
         n=6,
         supervision=supervision,
+        family=family,
     )
     if supervision == SUPERVISION_ANSWER_ONLY:
         mode = "answer-only (no analysis channel, no rationale)"
@@ -5681,23 +6826,26 @@ def check_tokenizer(args):
         mode = "constant ANALYSIS_TARGET (debug)"
     else:
         mode = "per-example rationale"
-    print(f"--check-tokenizer complete: zero drops; supervised spans = {mode} harmony "
-          "continuations (token-level mask audit passed).")
+    print(f"--check-tokenizer complete: zero drops; supervised spans = {mode} "
+          f"{'native' if native else 'harmony'} continuations "
+          "(token-level mask audit passed).")
 
     if supervision == SUPERVISION_GROUNDED:
         # ---- grounded direct-view contracts (tokenizer-only, no GPU) ----
-        letter_ids = qh_letter_token_ids(tokenizer)          # shared readout helpers:
-        prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)  # they only depend on
-        assert_qy_answer_slot_letter_tokens(                 # score_verifier constants,
-            tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids)  # not on --qh-aux
+        letter_ids = letter_token_ids_for(tokenizer, family)  # shared readout helpers:
+        prefill_ids = prefill_token_ids_for(tokenizer, family, control_ids)  # they only
+        assert_answer_slot_letter_tokens_for(                 # depend on score_verifier
+            tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids,  # constants, not
+            family=family)                                    # on --qh-aux
         attach_grounded_direct_readouts(
             all_base_rows, tokenized, prefill_ids, letter_ids,
-            control_ids["<|return|>"], args.max_len,
+            terminal_token_id_for(control_ids, family), args.max_len,
+            family=family,
         )
         assert_qy_chat_template_tokenization_parity(
             all_base_rows, tokenized, tokenizer, n=None
         )
-        _check_qy_readout_spans(tokenized, tokenizer, n=4)
+        _check_qy_readout_spans(tokenized, tokenizer, n=4, family=family)
         target_dist = Counter(r["qy_target_letter"] for r in tokenized)
         if target_dist["A"] != target_dist["B"]:
             raise RuntimeError(
@@ -5706,7 +6854,7 @@ def check_tokenizer(args):
         cont_lengths = sorted(len(r["continuation_ids"]) for r in tokenized)
         fallback = sum(1 for r in tokenized if not r.get("grounded_lm_enabled", True))
         print(f"--check-tokenizer [grounded] complete: direct-view readouts end at "
-              f"{FINAL_CHANNEL_PREFILL!r} with NO analysis in context; ' A'="
+              f"{prefill_text!r} with NO analysis in context; ' A'="
               f"{letter_ids['A']} ' B'={letter_ids['B']}; targets A={target_dist['A']} "
               f"B={target_dist['B']}; continuation tokens min/median/max = "
               f"{cont_lengths[0]}/{cont_lengths[len(cont_lengths) // 2]}/"
@@ -5721,16 +6869,16 @@ def check_tokenizer(args):
     # ---- q_h auxiliary leg: heavy tokenizer contracts that only run here ----
     cfg = mode_config(args)
     qy_loss = qy_loss_of(args)
-    letter_ids = qh_letter_token_ids(tokenizer)
-    prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)
-    cont_tokens = assert_qy_answer_slot_letter_tokens(
-        tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids
+    letter_ids = letter_token_ids_for(tokenizer, family)
+    prefill_ids = prefill_token_ids_for(tokenizer, family, control_ids)
+    cont_tokens = assert_answer_slot_letter_tokens_for(
+        tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids, family=family
     )
     if supervision == SUPERVISION_GROUNDED:
         constant_c = None
         print(f"Grounded+Q_H token contracts OK: ' A'={letter_ids['A']} ' B'={letter_ids['B']} "
               "(single, distinct, identical to the Q_Y answer-slot letter tokens); "
-              f"Q_H prefill {FINAL_CHANNEL_PREFILL!r} -> {prefill_ids}; the grounded LM "
+              f"Q_H prefill {prefill_text!r} -> {prefill_ids}; the grounded LM "
               "continuation is intentionally not treated as the answer-only C-token span.")
     else:
         constant_c = constant_continuation_tokens(tokenized)
@@ -5741,21 +6889,22 @@ def check_tokenizer(args):
             )
         print(f"Q_Y/Q_H token contracts OK: ' A'={letter_ids['A']} ' B'={letter_ids['B']} (single, "
               f"distinct, identical to the Q_Y answer-slot letter tokens); prefill "
-              f"{FINAL_CHANNEL_PREFILL!r} -> {prefill_ids}; answer-only continuation is a constant "
+              f"{prefill_text!r} -> {prefill_ids}; answer-only continuation is a constant "
               f"C={constant_c} tokens.")
 
     if qy_loss == QY_LOSS_FORCED_CHOICE:
         if supervision != SUPERVISION_GROUNDED:
             attach_qy_forced_choice_readouts(
                 all_base_rows, tokenized, prefill_ids, letter_ids,
-                control_ids["<|return|>"], args.max_len,
+                terminal_token_id_for(control_ids, family), args.max_len,
+                family=family,
             )
         # This is cheap relative to loading the tokenizer and proves every audited row
         # has the same token prefix as production apply_chat_template(tokenize=True).
         assert_qy_chat_template_tokenization_parity(
             all_base_rows, tokenized, tokenizer, n=None
         )
-        _check_qy_readout_spans(tokenized, tokenizer, n=4)
+        _check_qy_readout_spans(tokenized, tokenizer, n=4, family=family)
         qy_target_dist = Counter(r["qy_target_letter"] for r in tokenized)
         if qy_target_dist["A"] != qy_target_dist["B"]:
             raise RuntimeError(
@@ -5766,18 +6915,18 @@ def check_tokenizer(args):
     verify_qh_artifacts_match(qh_train, cfg["qh_train_jsonl"])
     verify_qh_artifacts_match(qh_eval, cfg["qh_eval_jsonl"])
     qh_tokenized = tokenize_qh_rows(qh_train + qh_eval, tokenizer, args.max_len,
-                                    prefill_ids, letter_ids)
+                                    prefill_ids, letter_ids, family=family)
     qh_lengths = sorted(len(r["qh_input_ids"]) for r in qh_tokenized)
     print(f"Tokenized {len(qh_tokenized)} Q_H rows; tokens min/median/max = "
           f"{qh_lengths[0]}/{qh_lengths[len(qh_lengths) // 2]}/{qh_lengths[-1]} "
           f"(max_len {args.max_len}).")
-    _check_qh_readout_spans(qh_tokenized, tokenizer, n=4)
+    _check_qh_readout_spans(qh_tokenized, tokenizer, n=4, family=family)
     target_dist = Counter(r["qh_target_letter"] for r in qh_tokenized)
     weighting = (
         "same binary NLL; grounded+qh-aux defaults to lambda=2 because two grounded "
         "Y_true-supporting views are present"
         if qy_loss == QY_LOSS_FORCED_CHOICE
-        else f"token-CE Q_Y; its answer letter is averaged across C={constant_c} tokens"
+        else f"legacy token-CE Q_Y; its answer letter is diluted across C={constant_c} tokens"
     )
     print(f"--check-tokenizer [--qh-aux] complete: qy_loss={qy_loss!r}; "
           f"{len(qh_tokenized)} Q_H readout inputs, targets A={target_dist['A']} "
@@ -5830,7 +6979,7 @@ def prepare_bf16():
 
 
 # ---------------------------------------------------------------------------
-# Full-parameter training preflight
+# Preflight (the "fail clearly, never fall back to LoRA" requirement)
 # ---------------------------------------------------------------------------
 
 def _gb(n_bytes):
@@ -5838,34 +6987,45 @@ def _gb(n_bytes):
 
 
 def _memory_table(state_bytes_per_param=STATE_BYTES_PER_PARAM, overhead_gb=PER_GPU_OVERHEAD_GB,
-                  h100_gb=80):
+                  h100_gb=80, n_params=N_PARAMS_EST):
     lines = [f"    GPUs | sharded state/GPU + overhead | fits {h100_gb}GB H100?"]
     for w in (1, 2, 4, 8):
-        need = _gb(state_bytes_per_param * N_PARAMS_EST) / w + overhead_gb
+        need = _gb(state_bytes_per_param * n_params) / w + overhead_gb
         lines.append(f"    {w:>4} | {need:>7.0f} GB                    | "
                      f"{'yes' if need <= h100_gb * GPU_MEM_SAFETY else 'NO'}")
     return "\n".join(lines)
 
 
-def preflight(world_size, use_deepspeed):
+def preflight(world_size, use_deepspeed, args=None):
     import torch
     import transformers
+
+    # `args=None` keeps the historical gpt-oss behaviour for any legacy caller.
+    family = MODEL_FAMILY_GPT_OSS if args is None else model_family_of(args)
+    native = family == MODEL_FAMILY_LLAMA3
+    n_params = N_PARAMS_EST if args is None else n_params_est_of(args)
+    ds_config = DEEPSPEED_CONFIG_PATH if args is None else deepspeed_config_of(args)
+    launcher_script = "ft-verifier.py" if native else "ft-verifier-oss-full.py"
+    # The target effective batch is whatever THIS run asked for; a --effective-batch
+    # override must be respected here instead of being compared against a hardcoded 8.
+    effective_batch = 8 if args is None else int(getattr(args, "effective_batch", 8) or 8)
 
     fsdp_tail = (
         "\nFSDP no-offload full FT keeps fp32 master weights/optimizer state on GPU "
         f"(~{STATE_BYTES_PER_PARAM} bytes/param of sharded state ~ "
-        f"{_gb(STATE_BYTES_PER_PARAM * N_PARAMS_EST):.0f} GiB total "
-        f"+ ~{PER_GPU_OVERHEAD_GB:.0f} GiB/GPU transients):\n" + _memory_table() +
-        "\nThis script performs full-parameter training and never substitutes LoRA. For 4x H100 "
+        f"{_gb(STATE_BYTES_PER_PARAM * n_params):.0f} GiB total "
+        f"+ ~{PER_GPU_OVERHEAD_GB:.0f} GiB/GPU transients):\n"
+        + _memory_table(n_params=n_params) +
+        "\nThere is NO LoRA fallback in this script (project decision). For 4x H100 "
         "96GB + 512GB CPU RAM, use the DeepSpeed optimizer-offload path:\n"
-        f"  accelerate launch --config_file {DEEPSPEED_CONFIG_PATH} ft-verifier-oss-full.py"
+        f"  accelerate launch --config_file {ds_config} {launcher_script}"
     )
     ds_tail = (
         "\nDeepSpeed ZeRO-3 optimizer-offload full FT keeps fp32 optimizer/master "
         "state on CPU and bf16 params/grads sharded on GPU "
         f"(GPU estimate: ~{DS_GPU_BYTES_PER_PARAM} bytes/param + "
         f"~{DS_PER_GPU_OVERHEAD_GB:.0f} GiB/GPU; CPU offload estimate: "
-        f"~{_gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * N_PARAMS_EST):.0f} GiB plus "
+        f"~{_gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * n_params):.0f} GiB plus "
         "checkpoint/save headroom). There is NO LoRA fallback."
     )
     msg_tail = ds_tail if use_deepspeed else fsdp_tail
@@ -5876,54 +7036,189 @@ def preflight(world_size, use_deepspeed):
                      if p.split("+")[0].isdigit())
 
     tf_v = transformers.__version__
-    if not (_vtuple("4.56.2") <= _vtuple(tf_v) < _vtuple("5.0.0")):
-        raise RuntimeError(f"transformers {tf_v} unsupported; pin >=4.56.2,<5." + msg_tail)
+    tf_lo, tf_hi = MODEL_FAMILY_TRANSFORMERS_RANGE[family]
+    if not (_vtuple(tf_lo) <= _vtuple(tf_v) < _vtuple(tf_hi)):
+        raise RuntimeError(
+            f"transformers {tf_v} unsupported for family {family!r}; pin "
+            f">={tf_lo},<{tf_hi}." + msg_tail
+        )
     torch_v = torch.__version__
     if _vtuple(torch_v) < _vtuple("2.4.0"):
-        raise RuntimeError(f"torch {torch_v} is unsupported; need >= 2.4." + msg_tail)
+        raise RuntimeError(f"torch {torch_v} too old; need >= 2.4." + msg_tail)
     import accelerate  # noqa: F401  (required by Trainer's FSDP/DeepSpeed paths)
 
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA device available on this machine." + msg_tail)
 
+    # Checked BEFORE the config comparison below: grad accumulation must be an integer
+    # for the expected gradient_accumulation_steps to mean anything at all.
+    if effective_batch % world_size != 0:
+        raise RuntimeError(
+            f"world_size={world_size} does not divide the target effective batch "
+            f"{effective_batch} - grad accumulation would be non-integer and the "
+            "effective batch/LR would silently change. Use a world size that divides "
+            "it (or change --effective-batch)." + msg_tail
+        )
+    grad_accum = effective_batch // world_size
+    selected_config = None
+
     if use_deepspeed:
         if os.environ.get("ACCELERATE_USE_DEEPSPEED", "false").lower() != "true":
             raise RuntimeError(
                 "DeepSpeed path requires launching through accelerate:\n"
-                f"  accelerate launch --config_file {DEEPSPEED_CONFIG_PATH} "
-                "ft-verifier-oss-full.py" + msg_tail
+                f"  accelerate launch --config_file {ds_config} "
+                f"{launcher_script}" + msg_tail
             )
-        config_path = os.environ.get("ACCELERATE_CONFIG_FILE", DEEPSPEED_CONFIG_PATH)
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                config_text = f.read()
-        elif os.path.exists(DEEPSPEED_CONFIG_PATH):
-            with open(DEEPSPEED_CONFIG_PATH) as f:
-                config_text = f.read()
-        else:
-            raise RuntimeError(f"DeepSpeed config {DEEPSPEED_CONFIG_PATH} not found." + msg_tail)
+        # The selected config is per-family and NEVER falls back across families: a
+        # gpt-oss MoE-leaf config would silently mis-shard a dense Llama run.
+        if native and not (args is not None and getattr(args, "accelerate_config", None)):
+            raise RuntimeError(
+                "an actual native DeepSpeed run must NAME its accelerate config: pass "
+                f"--accelerate-config {LLAMA3_DEEPSPEED_CONFIG_PATH} (the same path "
+                "given to `accelerate launch --config_file`). There is no implicit "
+                "default for a real Llama ZeRO-3 run." + msg_tail
+            )
+        if not os.path.exists(ds_config):
+            # NO fallback: a missing selection is an error, never a silent substitution
+            # of another family's or another run's configuration.
+            raise RuntimeError(f"DeepSpeed config {ds_config} not found." + msg_tail)
+        config_path = ds_config
+        exported_config = os.environ.get("ACCELERATE_CONFIG_FILE")
+        if exported_config and (
+            not os.path.exists(exported_config)
+            or os.path.realpath(exported_config) != os.path.realpath(ds_config)
+        ):
+            raise RuntimeError(
+                f"the launcher exported ACCELERATE_CONFIG_FILE={exported_config!r} but "
+                f"this run selected {ds_config!r}; refusing to train under a config "
+                "this process did not validate, and refusing to fall back to it."
+                + msg_tail
+            )
+        with open(config_path, "rb") as f:
+            config_bytes = f.read()
+        config_text = config_bytes.decode()
+        # Exact bytes of the file this process validated, recorded in metadata.
+        selected_config = {
+            "path": config_path,
+            "sha256": hashlib.sha256(config_bytes).hexdigest(),
+            "exported_accelerate_config_file": exported_config,
+            "validation": "selected-file structured parse (native) / legacy text gate (gpt-oss)",
+        }
         if "offload_optimizer_device: cpu" not in config_text:
             raise RuntimeError(
                 "DeepSpeed is enabled, but optimizer CPU offload is not configured. "
-                f"Use/update {DEEPSPEED_CONFIG_PATH} with offload_optimizer_device: cpu."
+                f"Use/update {ds_config} with offload_optimizer_device: cpu."
                 + msg_tail
             )
+        if native:
+            # STRUCTURED parse, not a regex over text: a comment, a similarly named key
+            # in another block or a quoted value must not be able to satisfy (or break)
+            # the gate. The dense student must also not inherit the OSS MoE leaf.
+            import yaml
+
+            parsed = yaml.safe_load(config_text)
+            if not isinstance(parsed, dict):
+                raise RuntimeError(
+                    f"{config_path}: accelerate config is not a YAML mapping." + msg_tail
+                )
+            ds_block = parsed.get("deepspeed_config")
+            if not isinstance(ds_block, dict):
+                raise RuntimeError(
+                    f"{config_path}: no deepspeed_config mapping; this run needs the "
+                    "ZeRO-3 CPU-optimizer-offload block." + msg_tail
+                )
+            if ("deepspeed_moe_layer_cls_names" in ds_block
+                    or "deepspeed_moe_layer_cls_names" in parsed):
+                raise RuntimeError(
+                    f"{config_path} declares deepspeed_moe_layer_cls_names; "
+                    f"{LLAMA3_BASE_MODEL} is dense and must not use a MoE leaf class."
+                    + msg_tail
+                )
+
+            def _config_match(got, want):
+                # bool is an int subclass: compare it by identity so True never
+                # satisfies 1, and allow an int where a float is expected.
+                if isinstance(want, bool) or isinstance(got, bool):
+                    return got is want
+                if isinstance(want, float):
+                    return isinstance(got, (int, float)) and float(got) == want
+                if isinstance(want, int):
+                    return isinstance(got, int) and got == want
+                return got == want
+
+            expected_top = {
+                "distributed_type": "DEEPSPEED",
+                "mixed_precision": "bf16",
+                "num_processes": world_size,
+                "num_machines": 1,
+                "use_cpu": False,
+            }
+            expected_ds = {
+                "zero_stage": 3,
+                "offload_optimizer_device": "cpu",
+                "offload_param_device": "none",
+                "gradient_clipping": 1.0,
+                "gradient_accumulation_steps": grad_accum,
+                "zero3_init_flag": True,
+                "zero3_save_16bit_model": True,
+            }
+            for prefix, block, expected in (("", parsed, expected_top),
+                                            ("deepspeed_config.", ds_block, expected_ds)):
+                for key, want in expected.items():
+                    if key not in block:
+                        raise RuntimeError(
+                            f"{config_path}: required setting {prefix}{key} is MISSING "
+                            f"(expected {want!r} for world_size={world_size}, effective "
+                            f"batch {effective_batch}); refusing to train on an "
+                            "under-specified DeepSpeed configuration." + msg_tail
+                        )
+                    if not _config_match(block[key], want):
+                        raise RuntimeError(
+                            f"{config_path}: {prefix}{key} is {block[key]!r}, expected "
+                            f"{want!r} for this run (world_size={world_size}, effective "
+                            f"batch {effective_batch})." + msg_tail
+                        )
+            selected_config.update(
+                deepspeed_config=dict(ds_block),
+                distributed_type=parsed.get("distributed_type"),
+                mixed_precision=parsed.get("mixed_precision"),
+                num_processes=parsed.get("num_processes"),
+                validation="selected-file structured YAML parse",
+            )
+            # Launcher-exported variables: ONLY the ones accelerate/transformers really
+            # define are inspected, and only when the launcher actually set them. No new
+            # environment requirement is invented here.
+            exported_precision = os.environ.get("ACCELERATE_MIXED_PRECISION")
+            if exported_precision and exported_precision.lower() != "bf16":
+                raise RuntimeError(
+                    f"the launcher exported ACCELERATE_MIXED_PRECISION="
+                    f"{exported_precision!r} but {config_path} selects bf16; refusing a "
+                    "precision the audited config did not declare." + msg_tail
+                )
+            for flag, why in (("ACCELERATE_USE_FSDP", "FSDP and DeepSpeed cannot both"
+                               " shard this run"),
+                              ("ACCELERATE_USE_CPU", "CPU-only execution cannot train "
+                               "this model")):
+                if os.environ.get(flag, "false").lower() == "true":
+                    raise RuntimeError(
+                        f"{flag} is exported alongside ACCELERATE_USE_DEEPSPEED: {why}."
+                        + msg_tail
+                    )
+            selected_config["exported_environment"] = {
+                key: os.environ.get(key)
+                for key in ("ACCELERATE_USE_DEEPSPEED", "ACCELERATE_MIXED_PRECISION",
+                            "ACCELERATE_USE_FSDP", "ACCELERATE_USE_CPU",
+                            "ACCELERATE_CONFIG_FILE")
+            }
     elif os.environ.get("LOCAL_RANK") is None:
         raise RuntimeError("FSDP path requires a torchrun launch (LOCAL_RANK unset)." + msg_tail)
 
-    if 8 % world_size != 0:
-        raise RuntimeError(
-            f"world_size={world_size} does not divide the target effective batch 8 — "
-            "grad accumulation would be non-integer and the effective batch/LR would "
-            "silently change. Use 8 GPUs (or a divisor of 8 with enough VRAM)." + msg_tail
-        )
-
     n_gpu = torch.cuda.device_count()
     if use_deepspeed:
-        per_gpu_need = _gb(DS_GPU_BYTES_PER_PARAM * N_PARAMS_EST) / world_size + DS_PER_GPU_OVERHEAD_GB
-        cpu_need_gb = max(DS_MIN_CPU_RAM_GB, _gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * N_PARAMS_EST) + 160.0)
+        per_gpu_need = _gb(DS_GPU_BYTES_PER_PARAM * n_params) / world_size + DS_PER_GPU_OVERHEAD_GB
+        cpu_need_gb = max(DS_MIN_CPU_RAM_GB, _gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * n_params) + 160.0)
     else:
-        per_gpu_need = _gb(STATE_BYTES_PER_PARAM * N_PARAMS_EST) / world_size + PER_GPU_OVERHEAD_GB
+        per_gpu_need = _gb(STATE_BYTES_PER_PARAM * n_params) / world_size + PER_GPU_OVERHEAD_GB
         cpu_need_gb = MIN_CPU_RAM_GB
     min_vram = min(_gb(torch.cuda.get_device_properties(i).total_memory) for i in range(n_gpu))
     if per_gpu_need > GPU_MEM_SAFETY * min_vram:
@@ -5946,23 +7241,281 @@ def preflight(world_size, use_deepspeed):
     except (FileNotFoundError, StopIteration):
         print("WARNING: could not read /proc/meminfo; skipping CPU RAM preflight.")
 
-    # Both paths train from the prepared quantizer-free bf16 base: loading the
-    # MXFP4 hub repo directly would either re-enter the quantizer (FSDP: defeats
-    # rank0-only CPU loading; ZeRO-3: blocks zero3 init) or fail outright.
-    if not os.path.isdir(BF16_DIR) or not os.path.exists(os.path.join(BF16_DIR, "config.json")):
-        raise RuntimeError(
-            f"{BF16_DIR} missing — run `python3 ft-verifier-oss-full.py --prepare-bf16` "
-            "first (one-time MXFP4 -> bf16 dequantize)." + msg_tail
+    if native:
+        # The native base ships unquantized: there is no --prepare-bf16 stage at all.
+        # Instead, pin the SAME source identity train/--check-tokenizer/scorer use.
+        source_info = describe_model_source(
+            model_name_of(args), family=family, revision=model_revision_of(args)
         )
-    with open(os.path.join(BF16_DIR, "config.json")) as f:
-        if "quantization_config" in json.load(f):
-            raise RuntimeError(f"{BF16_DIR} still carries quantization_config — "
-                               "regenerate it with --prepare-bf16." + msg_tail)
+        print(f"Native student source: {source_info['descriptor']} "
+              f"[{source_info['identity']}] incarnation "
+              f"{source_info['incarnation_sha256'][:12]}")
+    else:
+        # Both gpt-oss paths train from the prepared quantizer-free bf16 base: loading
+        # the MXFP4 hub repo directly would either re-enter the quantizer (FSDP: defeats
+        # rank0-only CPU loading; ZeRO-3: blocks zero3 init) or fail outright.
+        if not os.path.isdir(BF16_DIR) or not os.path.exists(os.path.join(BF16_DIR, "config.json")):
+            raise RuntimeError(
+                f"{BF16_DIR} missing — run `python3 ft-verifier-oss-full.py --prepare-bf16` "
+                "first (one-time MXFP4 -> bf16 dequantize)." + msg_tail
+            )
+        with open(os.path.join(BF16_DIR, "config.json")) as f:
+            if "quantization_config" in json.load(f):
+                raise RuntimeError(f"{BF16_DIR} still carries quantization_config — "
+                                   "regenerate it with --prepare-bf16." + msg_tail)
 
     names = sorted({torch.cuda.get_device_properties(i).name for i in range(n_gpu)})
-    print(f"Preflight OK: torch {torch_v}, transformers {tf_v}, {n_gpu} GPU(s) visible "
-          f"({', '.join(names)}), world_size={world_size}, "
-          f"~{per_gpu_need:.0f} GB/GPU planned, path={'deepspeed-zero3' if use_deepspeed else 'fsdp'}.")
+    print(f"Preflight OK: family={family}, torch {torch_v}, transformers {tf_v}, "
+          f"{n_gpu} GPU(s) visible ({', '.join(names)}), world_size={world_size}, "
+          f"~{per_gpu_need:.0f} GB/GPU planned "
+          f"(~{n_params / 1e9:.2f}B params), "
+          f"path={'deepspeed-zero3' if use_deepspeed else 'fsdp'}"
+          f"{f', config={ds_config}' if use_deepspeed else ''}.")
+    if selected_config is not None:
+        print(f"Selected accelerate config: {selected_config['path']} "
+              f"sha256={selected_config['sha256'][:12]} "
+              f"({selected_config['validation']}).")
+    # Returned so train() can record exactly what was selected/validated and compare it
+    # against the EFFECTIVE Trainer/plugin state after construction.
+    return {
+        "family": family,
+        "path": "deepspeed-zero3" if use_deepspeed else "fsdp",
+        "world_size": world_size,
+        "effective_batch": effective_batch,
+        "gradient_accumulation_steps": grad_accum,
+        "selected_accelerate_config": selected_config,
+        "transformers": tf_v,
+        "torch": torch_v,
+    }
+
+
+def _ds_config_get(config, dotted):
+    """Dotted lookup in a DeepSpeed config dict; (found, value).
+
+    The key names are the ones transformers 5.14.1's HfTrainerDeepSpeedConfig fills
+    itself (integrations/deepspeed.py trainer_config_process/finalize), so this reads
+    the same effective configuration DeepSpeed will be initialised with.
+    """
+    node = config
+    for part in dotted.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False, None
+        node = node[part]
+    return True, node
+
+
+def assert_effective_distributed_state(trainer, training_args, *, family, world_size,
+                                       grad_accum, effective_batch, use_deepspeed,
+                                       selected_config=None):
+    """Validate the EFFECTIVE Trainer/accelerator state BEFORE a single step runs (F2).
+
+    preflight validates the config FILE this process selected; this validates what the
+    launcher, TrainingArguments and Trainer actually built out of it. Everything is read
+    through the accessors the installed transformers 5.14.1 uses itself -
+    `trainer.accelerator.state.deepspeed_plugin` (trainer.py:833/860),
+    `plugin.hf_ds_config.config` (integrations/deepspeed.py:609/688) - and the DeepSpeed
+    keys are the ones HfTrainerDeepSpeedConfig fills (train_micro_batch_size_per_gpu,
+    gradient_accumulation_steps, train_batch_size, gradient_clipping, bf16.enabled,
+    fp16.enabled, zero_optimization.*). Nothing here invents an API or an env var.
+
+    It FAILS CLOSED: an absent plugin, an unreadable config dict or a missing required
+    setting raises instead of training an unvalidated ZeRO-3 run.
+
+    BOUNDARY: accelerate/deepspeed are not installed in the qualification environment,
+    so this function is exercised by a NAMED Trainer/plugin double only. No real
+    DeepSpeed engine, FSDP shard or multi-rank launch has been qualified.
+    """
+    native = family == MODEL_FAMILY_LLAMA3
+    effective = {
+        "family": family,
+        "validated": "trainer.accelerator state + TrainingArguments (pre-train)",
+        "qualification": "named Trainer/plugin double only; no real DeepSpeed/FSDP run",
+        "path": "deepspeed-zero3" if use_deepspeed else "fsdp",
+        "selected_accelerate_config": selected_config,
+    }
+
+    # ---- TrainingArguments: what the optimizer/scheduler will actually do ----
+    ta_expected = {
+        "gradient_accumulation_steps": grad_accum,
+        "per_device_train_batch_size": 1,
+        "max_grad_norm": 1.0,
+        "bf16": True,
+        "fp16": False,
+    }
+    for key, want in ta_expected.items():
+        got = getattr(training_args, key, None)
+        ok = (got is want) if isinstance(want, bool) else (got == want)
+        if not ok:
+            raise RuntimeError(
+                f"TrainingArguments.{key} is {got!r}, expected {want!r}; the effective "
+                "run does not match the approved training contract."
+            )
+    ta_world = getattr(training_args, "world_size", None)
+    if int(ta_world or 0) != int(world_size):
+        raise RuntimeError(
+            f"TrainingArguments.world_size is {ta_world!r} but this process planned "
+            f"world_size={world_size}; the effective batch would not be "
+            f"{effective_batch}."
+        )
+    ta_effective_batch = (int(getattr(training_args, "per_device_train_batch_size"))
+                          * int(getattr(training_args, "gradient_accumulation_steps"))
+                          * int(ta_world))
+    if ta_effective_batch != int(effective_batch):
+        raise RuntimeError(
+            f"effective batch from TrainingArguments is {ta_effective_batch}, not the "
+            f"requested {effective_batch}."
+        )
+    effective["training_arguments"] = {
+        "gradient_accumulation_steps": int(getattr(training_args, "gradient_accumulation_steps")),
+        "per_device_train_batch_size": int(getattr(training_args, "per_device_train_batch_size")),
+        "world_size": int(ta_world),
+        "effective_batch": ta_effective_batch,
+        "max_grad_norm": float(getattr(training_args, "max_grad_norm")),
+        "bf16": bool(getattr(training_args, "bf16")),
+        "fp16": bool(getattr(training_args, "fp16")),
+    }
+
+    accelerator = getattr(trainer, "accelerator", None)
+    state = getattr(accelerator, "state", None)
+    if accelerator is None or state is None:
+        raise RuntimeError(
+            "Trainer exposes no accelerator state; the effective distributed "
+            "configuration cannot be inspected, so this run fails closed."
+        )
+    num_processes = getattr(accelerator, "num_processes", None)
+    if num_processes is None:
+        num_processes = getattr(state, "num_processes", None)
+    if num_processes is None or int(num_processes) != int(world_size):
+        raise RuntimeError(
+            f"accelerator process count is {num_processes!r} but this run planned "
+            f"world_size={world_size}."
+        )
+    effective["num_processes"] = int(num_processes)
+    effective["distributed_type"] = str(getattr(state, "distributed_type", None))
+
+    if not use_deepspeed:
+        # FSDP route: TrainingArguments carries the audited plugin inputs. The plugin
+        # object itself is only cross-checked when it exposes a value (a CONTRADICTION
+        # fails closed; absence is not treated as a requirement, because no installed
+        # reference here defines those attribute names).
+        fsdp_config = dict(getattr(training_args, "fsdp_config", None) or {})
+        if native and fsdp_config.get("version") != 1:
+            raise RuntimeError(
+                f"native FSDP run has fsdp_config['version']={fsdp_config.get('version')!r}; "
+                "transformers 5.x defaults to version 2 and consumes "
+                "use_orig_params/sync_module_states on the v1 branch only."
+            )
+        want_wrap = [MODEL_FAMILY_FSDP_LAYER_CLS[family]]
+        wrap = list(fsdp_config.get("transformer_layer_cls_to_wrap") or [])
+        if wrap != want_wrap:
+            raise RuntimeError(
+                f"FSDP auto-wrap classes are {wrap!r}; {family} wraps {want_wrap!r}."
+            )
+        plugin = getattr(state, "fsdp_plugin", None)
+        plugin_state = {}
+        for attr in ("sharding_strategy", "state_dict_type", "cpu_ram_efficient_loading",
+                     "use_orig_params", "sync_module_states", "fsdp_version"):
+            if plugin is not None and hasattr(plugin, attr):
+                plugin_state[attr] = str(getattr(plugin, attr))
+        if plugin_state.get("fsdp_version") not in (None, "1"):
+            raise RuntimeError(
+                f"effective FSDP plugin reports version {plugin_state['fsdp_version']}, "
+                "not the pinned 1."
+            )
+        effective["fsdp"] = {"training_arguments_config": fsdp_config,
+                             "plugin": plugin_state}
+        return effective
+
+    # ---- DeepSpeed route: the EFFECTIVE plugin, not the file ----
+    plugin = getattr(state, "deepspeed_plugin", None)
+    if plugin is None:
+        raise RuntimeError(
+            "ACCELERATE_USE_DEEPSPEED is set but the Trainer's accelerator state has NO "
+            "deepspeed_plugin; the effective ZeRO-3/offload configuration cannot be "
+            "verified. Refusing to train."
+        )
+    hf_ds_config = getattr(plugin, "hf_ds_config", None)
+    ds_config = getattr(hf_ds_config, "config", None)
+    if not isinstance(ds_config, dict):
+        ds_config = getattr(plugin, "deepspeed_config", None)
+    if not isinstance(ds_config, dict):
+        raise RuntimeError(
+            "the effective DeepSpeed plugin exposes no configuration mapping "
+            "(hf_ds_config.config / deepspeed_config); refusing an uninspectable run."
+        )
+    zero_stage = getattr(plugin, "zero_stage", None)
+    if zero_stage is None or int(zero_stage) != 3:
+        raise RuntimeError(
+            f"effective DeepSpeed plugin zero_stage is {zero_stage!r}, not 3; this run "
+            "requires ZeRO-3 parameter sharding."
+        )
+    required = {
+        "zero_optimization.stage": 3,
+        "zero_optimization.offload_optimizer.device": "cpu",
+        "zero_optimization.offload_param.device": "none",
+        "gradient_accumulation_steps": grad_accum,
+        "train_micro_batch_size_per_gpu": 1,
+        "train_batch_size": int(effective_batch),
+        "gradient_clipping": 1.0,
+        "bf16.enabled": True,
+    }
+    for dotted, want in required.items():
+        found, got = _ds_config_get(ds_config, dotted)
+        if not found:
+            raise RuntimeError(
+                f"effective DeepSpeed config is MISSING {dotted} (expected {want!r}); "
+                "a required setting that cannot be read fails closed."
+            )
+        if isinstance(want, bool):
+            ok = got is want
+        elif isinstance(want, float):
+            ok = isinstance(got, (int, float)) and not isinstance(got, bool) and float(got) == want
+        elif isinstance(want, int):
+            ok = isinstance(got, int) and not isinstance(got, bool) and got == want
+        else:
+            ok = got == want
+        if not ok:
+            raise RuntimeError(
+                f"effective DeepSpeed config {dotted} is {got!r}, expected {want!r} "
+                f"(world_size={world_size}, effective batch {effective_batch})."
+            )
+    found_fp16, fp16_enabled = _ds_config_get(ds_config, "fp16.enabled")
+    if found_fp16 and fp16_enabled:
+        raise RuntimeError(
+            "effective DeepSpeed config enables fp16; this run is bf16 only."
+        )
+    moe_keys = sorted(k for k in ds_config if "moe" in str(k).lower())
+    plugin_moe = [str(v) for attr in ("deepspeed_moe_layer_cls_names", "moe_layer_cls_names")
+                  for v in (getattr(plugin, attr, None) or [])]
+    if native and (moe_keys or plugin_moe):
+        raise RuntimeError(
+            f"effective DeepSpeed configuration declares MoE leaf classes "
+            f"({moe_keys or plugin_moe}); {LLAMA3_BASE_MODEL} is dense."
+        )
+    dtype_fn = getattr(hf_ds_config, "dtype", None)
+    try:
+        effective_dtype = str(dtype_fn()) if callable(dtype_fn) else None
+    except Exception as exc:  # dtype() raises until trainer_config_process ran
+        effective_dtype = f"unavailable: {type(exc).__name__}"
+    if effective_dtype and "bfloat16" not in effective_dtype and "unavailable" not in effective_dtype:
+        raise RuntimeError(
+            f"effective DeepSpeed dtype is {effective_dtype}, not bfloat16."
+        )
+    effective["deepspeed"] = {
+        "zero_stage": int(zero_stage),
+        "dtype": effective_dtype,
+        "gradient_accumulation_steps": _ds_config_get(ds_config, "gradient_accumulation_steps")[1],
+        "train_micro_batch_size_per_gpu": _ds_config_get(ds_config, "train_micro_batch_size_per_gpu")[1],
+        "train_batch_size": _ds_config_get(ds_config, "train_batch_size")[1],
+        "gradient_clipping": _ds_config_get(ds_config, "gradient_clipping")[1],
+        "bf16_enabled": _ds_config_get(ds_config, "bf16.enabled")[1],
+        "offload_optimizer_device": _ds_config_get(
+            ds_config, "zero_optimization.offload_optimizer.device")[1],
+        "offload_param_device": _ds_config_get(
+            ds_config, "zero_optimization.offload_param.device")[1],
+        "moe_leaf_classes": moe_keys or plugin_moe or None,
+    }
+    return effective
 
 
 def patch_multiprocess_resource_tracker_shutdown():
@@ -6107,12 +7660,13 @@ class QHRunningStats:
 
 
 class QHPairCollator:
-    """Right-pad both legs of a paired ``(q_m, q_h)`` microbatch.
+    """Right-pad both legs of a paired (q_m, q_h) microbatch.
 
-    Token-CE q_m uses ``PadCollator``. In forced-choice mode, the q_m readout ends
-    immediately before its answer letter; labels remain only for Trainer's labelled-batch
-    evaluation routing. Both forced-choice readouts score their final position, which
-    requires microbatch size one.
+    The legacy q_m token-CE leg is delegated byte-for-byte to PadCollator. In the
+    symmetric mode, a second q_m view ends immediately before its answer letter; the
+    original labels remain in the batch only so Hugging Face Trainer recognizes a
+    labelled batch during evaluation. Both forced-choice readouts are scored at their
+    LAST position, hence the hard batch-size-1 requirement.
     """
 
     def __init__(self, pad_token_id, qy_loss=QY_LOSS_FORCED_CHOICE,
@@ -6217,10 +7771,10 @@ def qh_aux_trainer_class(Trainer):
     class QHAuxTrainer(Trainer):
         """Two forwards (q_m then q_h), one backward on their weighted sum.
 
-        ``model_accepts_loss_kwargs`` is false so Trainer does not inject
-        ``num_items_in_batch``. The default mode applies one shared restricted-A/B NLL
-        implementation to both readouts; ``token-ce`` selects the alternate supervised-
-        continuation q_m objective.
+        model_accepts_loss_kwargs is forced False so the Trainer never injects
+        num_items_in_batch. The default symmetric mode applies one shared restricted
+        A/B NLL implementation to both readouts. The explicit legacy token-ce mode
+        preserves the old q_m model(labels=...).loss path for checkpoint reproduction.
         """
 
         def __init__(self, *args, qh_lambda=QH_AUX_DEFAULT_LAMBDA, qh_letter_ids=None,
@@ -6251,8 +7805,8 @@ def qh_aux_trainer_class(Trainer):
         def _forced_choice_leg(self, model, input_ids, attention_mask, target, label):
             """One shared last-position A/B NLL for both q_m and q_h.
 
-            Delegates to the module-level ``forced_choice_leg`` shared with the grounded
-            direct view."""
+            Thin delegate to the module-level forced_choice_leg() so the grounded arm's
+            direct view runs the identical implementation (behaviour unchanged)."""
             return forced_choice_leg(
                 model, input_ids, attention_mask, target, label,
                 self.qh_letter_id_a, self.qh_letter_id_b, self.qh_logits_kwarg,
@@ -6303,7 +7857,7 @@ def qh_aux_trainer_class(Trainer):
                 )
                 self.qy_logits_shape_seen = int(outputs_y.logits.shape[1])
             else:
-                # Alternate token-CE q_m objective over the audited continuation.
+                # Explicit checkpoint-reproduction path: byte-for-byte old q_m call.
                 outputs_y = model(
                     input_ids=input_ids,
                     attention_mask=inputs["attention_mask"],
@@ -6860,18 +8414,30 @@ def guard_checkpoint_identity(output_dir, args):
             f"cannot safely inspect existing checkpoint metadata {metadata_path}: {exc}"
         ) from exc
 
-    # Missing ``qh_aux`` denotes a checkpoint without the auxiliary q_h view.
+    # Legacy metadata predates --qh-aux; absent keys mean the pure arm, so an
+    # unchanged pure run still matches its own old checkpoint.
     existing_qh_aux = bool(existing.get("qh_aux", False))
-    # Missing ``qy_loss`` on a q_h-aux checkpoint denotes token CE. This prevents a
-    # forced-choice run from overwriting a scientifically different checkpoint.
+    # The first q_h-aux checkpoints predate qy_loss and used token CE for q_m.
+    # Treating an absent field as that legacy objective prevents the new default from
+    # silently overwriting a scientifically different checkpoint.
     existing_qy_loss = (
         existing.get("qy_loss", QY_LOSS_TOKEN_CE) if existing_qh_aux else None
     )
-    # Grounded identity keys are null for non-grounded runs. Artifact/training-set
-    # digests remain audit metadata rather than checkpoint-directory identity because a
-    # valid teacher regeneration changes those digests.
+    # Grounded identity keys. They are None for every non-grounded run AND absent from all
+    # pre-grounded metadata, so legacy rationale / answer-only / qh-aux checkpoints keep
+    # matching their own re-runs exactly as before. Artifact/training-set digests are
+    # deliberately NOT here: they change on every legitimate teacher regeneration, and
+    # locking the checkpoint dir on them would break resume. They stay in metadata as
+    # auditable provenance.
     existing_grounded = existing.get("supervision") == SUPERVISION_GROUNDED
+    # Absent in all pre-migration metadata: the historical student is the gpt-oss family
+    # and carries no base descriptor, so gpt-oss re-runs keep matching their own
+    # checkpoints byte-for-byte.
+    existing_family = existing.get("model_family", MODEL_FAMILY_GPT_OSS)
     existing_identity = (
+        existing_family,
+        (existing.get("base_descriptor")
+         if existing_family == MODEL_FAMILY_LLAMA3 else None),
         existing.get("dataset"),
         existing.get("mode"),
         existing.get("supervision", SUPERVISION_RATIONALE),
@@ -6884,6 +8450,8 @@ def guard_checkpoint_identity(output_dir, args):
         existing.get("grounded_unresolved_policy") if existing_grounded else None,
     )
     requested_identity = (
+        model_family_of(args),
+        model_descriptor_of(args) if native_of(args) else None,
         args.dataset,
         args.mode,
         supervision_of(args),
@@ -6899,7 +8467,7 @@ def guard_checkpoint_identity(output_dir, args):
         raise RuntimeError(
             f"refusing to overwrite {output_dir!r}: existing checkpoint identity "
             f"{existing_identity!r} != requested {requested_identity!r}. Choose a new "
-            "--output-dir or deliberately move the existing checkpoint."
+            "--output-dir or remove/move the old checkpoint deliberately."
         )
 
 
@@ -6913,12 +8481,14 @@ def train(args):
     lambda_lm = lambda_lm_of(args)
     lambda_fc = lambda_fc_of(args)
     grounded_unresolved = grounded_unresolved_of(args)
+    family = model_family_of(args)
+    native = native_of(args)
     use_deepspeed = os.environ.get("ACCELERATE_USE_DEEPSPEED", "false").lower() == "true"
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
     rank = int(os.environ.get("RANK", "0"))
     is_main = rank == 0
 
-    # The constant rationale is restricted to smoke and tokenizer validation.
+    # --debug-constant-rationale can never produce a REAL checkpoint (Codex #1).
     if getattr(args, "debug_constant_rationale", False) and not args.smoke:
         raise SystemExit("--debug-constant-rationale is only valid with --smoke or "
                          "--check-tokenizer; a real training run must use verified offline "
@@ -6933,7 +8503,7 @@ def train(args):
     output_dir = effective_output_dir(args)
     guard_checkpoint_identity(output_dir, args)
     patch_multiprocess_resource_tracker_shutdown()
-    preflight(world_size, use_deepspeed)
+    preflight_record = preflight(world_size, use_deepspeed, args)
 
     import torch
     import transformers
@@ -7075,9 +8645,12 @@ def train(args):
         # being None.
         ta_kwargs.update(average_tokens_across_devices=False, prediction_loss_only=True)
     if qh_aux:
-        # ``num_items_in_batch`` is disabled for the paired objective, so cross-device
-        # token averaging would add an unused collective. Both forced-choice legs are one
-        # decision; token CE keeps its device-local continuation normalization.
+        # ONLY on this arm. The pure/rationale paths keep the historical
+        # TrainingArguments exactly, so their checkpoints stay reproducible.
+        # Here num_items_in_batch is never computed (model_accepts_loss_kwargs is
+        # forced False), so cross-device token averaging would be dead code that
+        # only adds a collective. In forced-choice mode both legs are one decision;
+        # legacy token-ce retains the previous device-local normalization exactly.
         ta_kwargs.update(average_tokens_across_devices=False)
     if args.smoke:
         ta_kwargs.update(max_steps=2, eval_strategy="no")
@@ -7085,8 +8658,13 @@ def train(args):
         ta_kwargs.update(
             fsdp="full_shard auto_wrap",
             fsdp_config={
-                "transformer_layer_cls_to_wrap": ["GptOssDecoderLayer"],
+                "transformer_layer_cls_to_wrap": [MODEL_FAMILY_FSDP_LAYER_CLS[family]],
                 "state_dict_type": "FULL_STATE_DICT",
+                # transformers 5.x defaults fsdp_config["version"] to 2 and consumes
+                # use_orig_params/sync_module_states ONLY on the v1 branch
+                # (training_args.py ~2742 and ~2775-2801), so pin v1 explicitly instead of
+                # silently losing rank0 CPU-efficient loading. 4.56.x ignores the key.
+                "version": 1,
                 "use_orig_params": True,
                 "cpu_ram_efficient_loading": True,
                 "sync_module_states": True,
@@ -7100,10 +8678,37 @@ def train(args):
             "the paired Q_Y/Q_H objective requires explicit device-local normalization."
         )
 
-    model_source = BF16_DIR
-    tokenizer = AutoTokenizer.from_pretrained(model_source)
+    # The student base: the pinned native model (or a local materialisation / a
+    # checkpoint produced from it) for the native family, else the prepared bf16 base.
+    model_source = model_name_of(args) if native else BF16_DIR
+    model_revision = model_revision_of(args) if native else None
+    pin_kwargs = {}
+    if model_revision and not os.path.isdir(model_source):
+        # A local directory carries its own bytes, so revision= would be meaningless for
+        # a path; model_revision_of already refused any value but the approved pin.
+        pin_kwargs["revision"] = model_revision
+    if getattr(args, "local_files_only", False):
+        pin_kwargs["local_files_only"] = True
+    # Identity BEFORE anything is loaded; the same helper the scorer uses.
+    source_info = describe_model_source(model_source, family=family, revision=model_revision)
+    if native:
+        # A new native run begins from the CANONICAL pinned base - the hub pin or a
+        # local materialisation of exactly those files - never from a produced
+        # checkpoint, whose own history would silently be inherited (F1). Produced
+        # checkpoints remain scoring/loading sources.
+        assert_native_training_base(source_info)
+    base_descriptor = source_info["descriptor"]
+    if is_main:
+        print(f"Student base: {base_descriptor} [{source_info['identity']}] "
+              f"path={source_info['source_path']} incarnation "
+              f"{source_info['incarnation_sha256'][:12]}")
+    tokenizer = AutoTokenizer.from_pretrained(model_source, **pin_kwargs)
     if tokenizer.pad_token is None:
+        # Collator padding only. The model config pad id and the embedding padding_idx
+        # are deliberately left untouched (assert_native_model_pairing).
         tokenizer.pad_token = tokenizer.eos_token
+    if native:
+        assert_native_tokenizer_identity(tokenizer)
 
     # Data: rebuild, drift-guard against the audited artifacts, tokenize.
     # (Every rank needs the rows; only rank 0 narrates.)
@@ -7163,6 +8768,7 @@ def train(args):
         tokenizer,
         args.max_len,
         supervision=supervision,
+        family=family,
     )
     eval_tok = (
         []
@@ -7172,6 +8778,7 @@ def train(args):
             tokenizer,
             args.max_len,
             supervision=supervision,
+            family=family,
         )
     )
     if is_main:
@@ -7180,36 +8787,38 @@ def train(args):
             tokenizer,
             n=3,
             supervision=supervision,
+            family=family,
         )
     train_ds = TokenizedRowsDataset(train_tok)
     eval_ds = None if args.train_all else TokenizedRowsDataset(eval_tok)
 
     grounded_letter_ids = grounded_prefill_ids = None
     if grounded:
-        control_ids = harmony_control_ids(tokenizer)
+        control_ids = control_ids_for(tokenizer, family)
         # Shared readout helpers: they depend only on the imported score_verifier
         # constants, not on --qh-aux, so the grounded direct view scores exactly the slot
         # the production evaluator reads.
-        grounded_letter_ids = qh_letter_token_ids(tokenizer)
-        grounded_prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)
-        assert_qy_answer_slot_letter_tokens(
-            tokenizer, grounded_letter_ids, control_ids, prefill_ids=grounded_prefill_ids
+        grounded_letter_ids = letter_token_ids_for(tokenizer, family)
+        grounded_prefill_ids = prefill_token_ids_for(tokenizer, family, control_ids)
+        assert_answer_slot_letter_tokens_for(
+            tokenizer, grounded_letter_ids, control_ids,
+            prefill_ids=grounded_prefill_ids, family=family,
         )
         attach_grounded_direct_readouts(
             train_rows, train_tok, grounded_prefill_ids, grounded_letter_ids,
-            control_ids["<|return|>"], args.max_len,
+            terminal_token_id_for(control_ids, family), args.max_len, family=family,
         )
         if not args.train_all:
             attach_grounded_direct_readouts(
                 eval_rows, eval_tok, grounded_prefill_ids, grounded_letter_ids,
-                control_ids["<|return|>"], args.max_len,
+                terminal_token_id_for(control_ids, family), args.max_len, family=family,
             )
         # Run on every rank so a tokenization-contract failure cannot be rank-specific.
         assert_qy_chat_template_tokenization_parity(train_rows, train_tok, tokenizer, n=None)
         if not args.train_all:
             assert_qy_chat_template_tokenization_parity(eval_rows, eval_tok, tokenizer, n=None)
         if is_main:
-            _check_qy_readout_spans(train_tok, tokenizer, n=2)
+            _check_qy_readout_spans(train_tok, tokenizer, n=2, family=family)
             print(f"Grounded arm ON: lambda_lm={lambda_lm}, lambda_fc={lambda_fc}, "
                   f"unresolved policy {grounded_unresolved!r}, "
                   f"{grounded_fallback_rows} fallback row(s), ' A'="
@@ -7224,11 +8833,12 @@ def train(args):
     # --smoke truncation. Metadata's training-set hash is taken from exactly these.
     qh_train_selected, qh_eval_selected = [], []
     if qh_aux:
-        control_ids = harmony_control_ids(tokenizer)
-        qh_letter_ids = qh_letter_token_ids(tokenizer)
-        qh_prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)
-        reference_c = assert_qy_answer_slot_letter_tokens(
-            tokenizer, qh_letter_ids, control_ids, prefill_ids=qh_prefill_ids
+        control_ids = control_ids_for(tokenizer, family)
+        qh_letter_ids = letter_token_ids_for(tokenizer, family)
+        qh_prefill_ids = prefill_token_ids_for(tokenizer, family, control_ids)
+        reference_c = assert_answer_slot_letter_tokens_for(
+            tokenizer, qh_letter_ids, control_ids, prefill_ids=qh_prefill_ids,
+            family=family,
         )
         if grounded:
             # Grounded rows intentionally contain an audited analysis continuation, so
@@ -7247,12 +8857,14 @@ def train(args):
             if not grounded:
                 attach_qy_forced_choice_readouts(
                     train_rows, train_tok, qh_prefill_ids, qh_letter_ids,
-                    control_ids["<|return|>"], args.max_len,
+                    terminal_token_id_for(control_ids, family), args.max_len,
+                    family=family,
                 )
                 if not args.train_all:
                     attach_qy_forced_choice_readouts(
                         eval_rows, eval_tok, qh_prefill_ids, qh_letter_ids,
-                        control_ids["<|return|>"], args.max_len,
+                        terminal_token_id_for(control_ids, family), args.max_len,
+                        family=family,
                     )
             # Run on every rank so a tokenization-contract failure cannot be rank-specific.
             assert_qy_chat_template_tokenization_parity(
@@ -7265,17 +8877,19 @@ def train(args):
         qh_train_selected = select_qh_siblings(train_rows, qh_train_rows)
         qh_eval_selected = [] if args.train_all else select_qh_siblings(eval_rows, qh_eval_rows)
         qh_train_tok = tokenize_qh_rows(qh_train_selected, tokenizer,
-                                        args.max_len, qh_prefill_ids, qh_letter_ids)
+                                        args.max_len, qh_prefill_ids, qh_letter_ids,
+                                        family=family)
         qh_eval_tok = tokenize_qh_rows(qh_eval_selected, tokenizer,
-                                       args.max_len, qh_prefill_ids, qh_letter_ids)
+                                       args.max_len, qh_prefill_ids, qh_letter_ids,
+                                       family=family)
         if is_main:
             if qy_loss == QY_LOSS_FORCED_CHOICE:
-                _check_qy_readout_spans(train_tok, tokenizer, n=2)
-            _check_qh_readout_spans(qh_train_tok, tokenizer, n=2)
+                _check_qy_readout_spans(train_tok, tokenizer, n=2, family=family)
+            _check_qh_readout_spans(qh_train_tok, tokenizer, n=2, family=family)
             weighting = (
                 "lambda=1 is equal per-decision weighting"
                 if qy_loss == QY_LOSS_FORCED_CHOICE
-                else f"token-CE Q_Y over C={qy_continuation_token_count} tokens"
+                else f"legacy Q_Y token CE over C={qy_continuation_token_count} tokens"
             )
             print(f"Q_H aux ON: qy_loss={qy_loss!r}, lambda={qh_lambda} ({weighting}), "
                   f"target semantic {cfg['qh_target_semantic']}, ' A'={qh_letter_ids['A']} "
@@ -7294,15 +8908,26 @@ def train(args):
     # bf16=True); bf16 under ZeRO-3 (DeepSpeed keeps fp32 masters internally).
     load_dtype = torch.bfloat16 if use_deepspeed else torch.float32
     if is_main:
-        print(f"Loading {model_source} in {load_dtype} ...")
+        print(f"Loading {base_descriptor} in {load_dtype} ...")
     model = _from_pretrained_compat(
         AutoModelForCausalLM, model_source, load_dtype,
         attn_implementation="eager",
         use_cache=False,
+        **pin_kwargs,
     )
     if getattr(model.config, "quantization_config", None) is not None:
-        raise RuntimeError("model loaded WITH quantization_config — full FT requires the "
-                           "dequantized base (run --prepare-bf16).")
+        raise RuntimeError(
+            "model loaded WITH quantization_config — full FT requires an unquantized base"
+            + ("." if native else " (run --prepare-bf16).")
+        )
+    native_pairing = None
+    if native:
+        native_pairing = assert_native_model_pairing(
+            model, tokenizer, args.max_len, expected_dtype=load_dtype)
+        if is_main:
+            print(f"Native pairing OK: vocab {native_pairing['vocab_size']}, context "
+                  f"{native_pairing['context']}, EOT {native_pairing['eot_id']}, "
+                  "config pad_token_id and embedding padding_idx both None.")
     def logical_numel(param):
         # ZeRO-3 init can materialize parameters as local shards/placeholders;
         # DeepSpeed keeps the global size in ds_numel when param.numel() is 0.
@@ -7351,7 +8976,7 @@ def train(args):
                 qy_loss=QY_LOSS_FORCED_CHOICE,
                 letter_ids=qh_letter_ids,
                 prefill_ids=qh_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=terminal_token_id_for(control_ids, family),
             ),
             lambda_lm=lambda_lm,
             lambda_fc=lambda_fc,
@@ -7377,7 +9002,7 @@ def train(args):
                 qy_loss=qy_loss,
                 letter_ids=qh_letter_ids,
                 prefill_ids=qh_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=terminal_token_id_for(control_ids, family),
             ),
             qh_lambda=qh_lambda,
             qh_letter_ids=qh_letter_ids,
@@ -7401,7 +9026,7 @@ def train(args):
                 tokenizer.pad_token_id,
                 letter_ids=grounded_letter_ids,
                 prefill_ids=grounded_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=terminal_token_id_for(control_ids, family),
             ),
             lambda_lm=lambda_lm,
             lambda_fc=lambda_fc,
@@ -7423,6 +9048,30 @@ def train(args):
             eval_dataset=eval_ds,
             data_collator=PadCollator(tokenizer.pad_token_id),
         )
+    # F2: the EFFECTIVE accelerator/plugin/TrainingArguments state, before any step.
+    effective_distributed = assert_effective_distributed_state(
+        trainer,
+        training_args,
+        family=family,
+        world_size=world_size,
+        grad_accum=grad_accum,
+        effective_batch=args.effective_batch,
+        use_deepspeed=use_deepspeed,
+        selected_config=(preflight_record or {}).get("selected_accelerate_config"),
+    )
+    if is_main:
+        print(f"Effective distributed state OK: {effective_distributed['path']}, "
+              f"{effective_distributed['num_processes']} process(es), GAS "
+              f"{effective_distributed['training_arguments']['gradient_accumulation_steps']}, "
+              f"effective batch "
+              f"{effective_distributed['training_arguments']['effective_batch']}"
+              + (f", zero_stage {effective_distributed['deepspeed']['zero_stage']}, "
+                 f"optimizer offload "
+                 f"{effective_distributed['deepspeed']['offload_optimizer_device']}, "
+                 f"param offload "
+                 f"{effective_distributed['deepspeed']['offload_param_device']}"
+                 if "deepspeed" in effective_distributed else "")
+              + ".")
     trainer.train()
     if qh_aux:
         if grounded:
@@ -7482,6 +9131,7 @@ def train(args):
             saved = json.load(f)
         assert "quantization_config" not in saved, "saved checkpoint carries quantization_config"
 
+        prefill_text = prefill_text_for(family)
         if supervision == SUPERVISION_ANSWER_ONLY:
             forced_choice_qy = qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE
             rationale_supervision = {
@@ -7490,19 +9140,24 @@ def train(args):
                 "rationale_artifacts_used": False,
                 "note": (
                     "No rationale was loaded, attached, or teacher-forced; Q_Y is supervised "
-                    + ("only as a restricted A/B forced choice at the final-channel answer "
-                       "slot."
+                    + ("only as a restricted A/B forced choice at the "
+                       f"{prefill_text!r} answer slot."
                        if forced_choice_qy else
-                       "by the direct final-channel Answer: A/B continuation.")
+                       f"by the direct {prefill_text!r} Answer: A/B continuation.")
                 ),
             }
             if forced_choice_qy:
                 loss_mask = (
                     "Q_Y forced-choice branch: no token labels are passed to model(); input "
-                    "ends at FINAL_CHANNEL_PREFILL and restricted NLL scores only ' A'/' B'. "
+                    f"ends at {prefill_text!r} and restricted NLL scores only ' A'/' B'. "
                     "The audited answer-only labels remain in the batch solely for Trainer "
-                    "evaluation routing and fail-closed target/readout checks; no analysis "
-                    "channel, rationale, format scaffold, or return token contributes loss"
+                    "evaluation routing and fail-closed target/readout checks; no analysis, "
+                    "rationale, format scaffold, or terminal token contributes loss"
+                )
+            elif native:
+                loss_mask = (
+                    "prompt masked; supervised continuation = 'Answer: X' + "
+                    f"{NATIVE_EOT_TOKEN}; no analysis and no rationale"
                 )
             else:
                 loss_mask = (
@@ -7512,31 +9167,71 @@ def train(args):
         elif supervision == SUPERVISION_GROUNDED:
             rationale_supervision = {
                 "mode": "none-grounded",
-                "analysis_channel_supervised": True,
+                "analysis_channel_supervised": not native,
                 "rationale_artifacts_used": False,
                 "note": (
-                    "No rationale was loaded, attached, or teacher-forced. The analysis "
-                    "channel carries a per-item, mechanically audited, orientation-"
-                    "invariant grounded adjudication target (see the 'grounded' block)."
+                    "No rationale was loaded, attached, or teacher-forced. The "
+                    + ("answer turn carries" if native else "analysis channel carries")
+                    + " a per-item, mechanically audited, orientation-invariant grounded "
+                      "adjudication target (see the 'grounded' block)."
                     + (" --qh-aux additionally trains the explicit Q_H positive-control "
                        "readout; this is a three-view checkpoint."
                        if qh_aux else "")
                 ),
             }
+            if native:
+                # Public G is an ACTIVE objective only when the LM view is actually
+                # weighted: with --lambda-lm 0 the audited grounded analysis is still in
+                # the batch, but no gradient ever flows through it (View 2 only), so
+                # calling the checkpoint public-G supervised would misdescribe it (F11).
+                #
+                # Every count is resolved PER ROW over the rows the Trainer really
+                # consumed: train_rows/eval_rows here are already the post --train-all
+                # merge, post --smoke truncation selections. Target PRESENCE, active
+                # supervision, the validation split and the corpus-wide fallback tally
+                # are therefore separate numbers, and no count can go negative. The
+                # previous form subtracted an all-splits fallback count from a selected
+                # denominator, which under --smoke produced a negative row count.
+                lm_view_weighted = float(lambda_lm) > 0.0
+                train_selected = len(train_rows)
+                eval_selected = len(eval_rows)
+                train_with_G = sum(1 for r in train_rows if r.get("grounded_lm_enabled"))
+                eval_with_G = sum(1 for r in eval_rows if r.get("grounded_lm_enabled"))
+                rationale_supervision.update(
+                    public_G_supervised=bool(lm_view_weighted and train_with_G > 0),
+                    public_G_supervised_rows=(train_with_G if lm_view_weighted else 0),
+                    public_G_target_present_rows=train_with_G,
+                    public_G_absent_rows=train_selected - train_with_G,
+                    public_G_denominator=train_selected,
+                    public_G_eval_target_present_rows=eval_with_G,
+                    public_G_eval_absent_rows=eval_selected - eval_with_G,
+                    public_G_eval_denominator=eval_selected,
+                    public_G_lm_view_weighted=lm_view_weighted,
+                    grounded_fallback_rows_all_splits=grounded_fallback_rows,
+                    private_channel_supervised=False,
+                    native_note=NATIVE_NO_PRIVATE_CHANNEL_NOTE,
+                )
             loss_mask = (
                 "prompt masked; View 1 supervised continuation = per-item audited grounded "
-                "analysis + explicit final-channel transition + 'Answer: X' + return token "
-                "(stock token-mean CE); PLUS View 2, a restricted A/B forced-choice NLL at "
-                "the direct final-channel answer slot whose input is the SAME chat prompt "
-                "followed by FINAL_CHANNEL_PREFILL with NO analysis in context. Fallback "
-                "rows (unresolved items under --grounded-unresolved answer-only) carry the "
-                "answer-only continuation and contribute View 2 only"
+                + (f"analysis as PUBLIC assistant prose + {NATIVE_TARGET_SEPARATOR!r} + "
+                   f"'Answer: X' + {NATIVE_EOT_TOKEN}"
+                   if native else
+                   "analysis + explicit final-channel transition + 'Answer: X' + return token")
+                + " (stock token-mean CE); PLUS View 2, a restricted A/B forced-choice NLL "
+                  "at the direct answer slot whose input is the SAME chat prompt followed "
+                  f"by {prefill_text!r} with NO analysis in context. Fallback rows "
+                  "(unresolved items under --grounded-unresolved answer-only) carry the "
+                  "answer-only continuation and contribute View 2 only"
             )
         elif getattr(args, "debug_constant_rationale", False):
             rationale_supervision = {"mode": "debug-constant", "constant": ANALYSIS_TARGET}
             loss_mask = (
-                "prompt masked; supervised continuation = debug constant analysis-channel "
-                "scaffold + explicit final-channel transition + 'Answer: X' + return token"
+                "prompt masked; supervised continuation = debug constant "
+                + (f"PUBLIC analysis + {NATIVE_TARGET_SEPARATOR!r} + 'Answer: X' + "
+                   f"{NATIVE_EOT_TOKEN}"
+                   if native else
+                   "analysis-channel scaffold + explicit final-channel transition + "
+                   "'Answer: X' + return token")
             )
         else:
             rationale_supervision = {
@@ -7564,9 +9259,18 @@ def train(args):
                 )
             except Exception:  # noqa: BLE001 (provenance is best-effort metadata)
                 pass
+            if native:
+                rationale_supervision.update(
+                    private_channel_supervised=False,
+                    native_note=NATIVE_NO_PRIVATE_CHANNEL_NOTE,
+                )
             loss_mask = (
-                "prompt masked; supervised continuation = per-example analysis-channel "
-                "rationale + explicit final-channel transition + 'Answer: X' + return token"
+                "prompt masked; supervised continuation = per-example "
+                + (f"rationale as PUBLIC assistant prose + {NATIVE_TARGET_SEPARATOR!r} + "
+                   f"'Answer: X' + {NATIVE_EOT_TOKEN}"
+                   if native else
+                   "analysis-channel rationale + explicit final-channel transition + "
+                   "'Answer: X' + return token")
             )
 
         grounded_metadata = {"enabled": False}
@@ -7673,7 +9377,7 @@ def train(args):
                 "qy_continuation_token_count_role": (
                     "structural/tokenizer audit only; it is not a loss denominator"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "token-CE continuation loss denominator"
+                    "legacy token-CE loss denominator"
                 ),
                 "target_semantic": cfg["qh_target_semantic"],
                 "target_semantic_policy":
@@ -7698,7 +9402,7 @@ def train(args):
                     "and canonical return-token ids removed; equivalently, the unchanged "
                     "Q_Y chat prompt + transcript followed by FINAL_CHANNEL_PREFILL"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "model(labels=...).loss over the audited answer-only continuation"
+                    "legacy model(labels=...).loss over the audited answer-only continuation"
                 ),
                 "qy_readout_prompt_template": (
                     "the grounded View 2 audited Q_Y chat prompt (same direct readout as the "
@@ -7717,7 +9421,7 @@ def train(args):
                     "retained in batch for Trainer labelled-evaluation routing and collator "
                     "contract checks; never passed to model in the forced-choice branch"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "passed to the model for token CE"
+                    "passed to model for legacy token CE"
                 ),
                 "logits_to_keep_kwarg": qh_logits_kwarg,
                 "qy_logits_positions_returned": trainer.qy_logits_shape_seen,
@@ -7755,7 +9459,7 @@ def train(args):
                     "one paired (Q_Y, Q_H) example; two forced-choice forwards using the "
                     "same A/B NLL (Y then H), one backward on the weighted sum"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "one paired (Q_Y, Q_H) example; token-CE Y forward then "
+                    "one paired (Q_Y, Q_H) example; legacy token-CE Y forward then "
                     "forced-choice H forward, one backward on the weighted sum"
                 ),
                 "semantics_note": (
@@ -7764,12 +9468,62 @@ def train(args):
                 ),
             }
 
+        native_protocol_metadata = None
+        if native:
+            native_protocol_metadata = {
+                # There is no private/analysis channel in the native protocol; the
+                # harmony analysis fields must not describe a native checkpoint.
+                "analysis_channel": None,
+                "analysis_channel_supervised": False,
+                "continuation_template": native_continuation_template(supervision),
+                "readout_input_suffix": NATIVE_ANSWER_PREFILL,
+                "readout_tail_tokens": NATIVE_READOUT_TAIL_TOKENS,
+                "inference_dtype": NATIVE_DTYPE,
+                "note": NATIVE_NO_PRIVATE_CHANNEL_NOTE,
+                # The COMPLETE shared contract (header/EOT/EOS/BOS/separator/control/
+                # forbidden/readout). describe_model_source compares every key it
+                # knows against its own native_protocol(), so recording the whole dict
+                # is what makes drift detectable instead of two matching strings.
+                **native_protocol(),
+                **(native_pairing or {}),
+            }
+
         metadata = {
-            "model_name": MODEL_NAME,
+            "model_name": model_name_of(args) if native else MODEL_NAME,
+            "model_family": family,
+            "model_revision": model_revision,
+            # CANONICAL base identity (repo@pin). The physical directory this
+            # process read is separate provenance, recorded next to it.
+            "base_descriptor": base_descriptor,
+            "base_source_path": source_info["source_path"],
+            "base_source_identity": source_info["identity"],
+            "base_incarnation_sha256": source_info["incarnation_sha256"],
+            "base_identity_limits": source_info["limits"],
+            "native_protocol": native_protocol_metadata,
+            # V2 is the 3.1 protocol. describe_model_source REQUIRES it explicitly: a
+            # checkpoint that declares the retired v1, or declares nothing at all, is
+            # refused rather than assumed compatible with the current base.
+            "checkpoint_protocol_version":
+                NATIVE_CHECKPOINT_PROTOCOL_V2 if native else None,
+            # The declarations describe_model_source re-checks against its OWN pin, so a
+            # checkpoint can never be replayed against a different base, architecture
+            # capacity, working readout budget, readout slot or inference dtype than the
+            # one it was actually trained under.
+            "native_base_model": LLAMA3_BASE_MODEL if native else None,
+            "native_base_revision": LLAMA3_BASE_REVISION if native else None,
+            "native_context_capacity": LLAMA3_CONTEXT if native else None,
+            "native_readout_budget": LLAMA3_READOUT_BUDGET if native else None,
+            "native_readout": NATIVE_READOUT if native else None,
+            "native_inference_dtype": NATIVE_DTYPE if native else None,
+            # Hashed AFTER tokenizer.save_pretrained above: a cold reader detects a
+            # tokenizer swapped into the checkpoint after the fact. Native only, so
+            # the legacy save path keeps its exact cost and fields.
+            "tokenizer_fingerprint_sha256":
+                (tokenizer_file_fingerprint(output_dir)["sha256"] if native else None),
             "dataset": args.dataset,
             "mode": args.mode,
             "supervision": supervision,
-            # Read by ``guard_checkpoint_identity``.
+            # Read by guard_checkpoint_identity; absent in pre-2026-08 metadata.
             "qh_aux": qh_aux,
             "qh_lambda": qh_lambda if qh_aux else None,
             "qy_loss": qy_loss if qh_aux else None,
@@ -7780,12 +9534,12 @@ def train(args):
             "grounded_unresolved_policy": grounded_unresolved,
             "supervised_continuation_template":
                 (None if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE and not grounded
-                 else supervised_continuation_template(supervision)),
+                 else continuation_template_for(supervision, family)),
             "audited_answer_only_continuation_template":
-                (supervised_continuation_template(supervision)
+                (continuation_template_for(supervision, family)
                  if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE and not grounded else None),
             "forced_choice_readout_input_suffix":
-                (FINAL_CHANNEL_PREFILL
+                (prefill_text
                  if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE else None),
             "dataset_path": cfg["dataset_path"],
             "stories_path": cfg["stories_path"],
@@ -7805,7 +9559,18 @@ def train(args):
             "dtype_policy": ("bf16 load; DeepSpeed ZeRO-3 keeps fp32 masters" if use_deepspeed
                              else "fp32 master weights + bf16 MixedPrecision via FSDP"),
             "distributed": {"path": "deepspeed-zero3" if use_deepspeed else "fsdp",
-                            "world_size": world_size},
+                            "world_size": world_size,
+                            "accelerate_config": (deepspeed_config_of(args)
+                                                  if use_deepspeed else None),
+                            # The file this process actually selected (path+sha256)
+                            # and the EFFECTIVE state validated before the first
+                            # step, so the checkpoint states what really ran.
+                            "selected_accelerate_config":
+                                (preflight_record or {}).get("selected_accelerate_config"),
+                            "effective_state": effective_distributed,
+                            "fsdp_layer_cls": (None if use_deepspeed
+                                               else MODEL_FAMILY_FSDP_LAYER_CLS[family]),
+                            "fsdp_version": None if use_deepspeed else 1},
             "hyperparameters": {
                 "learning_rate": args.lr,
                 "num_train_epochs": args.epochs,
@@ -7870,13 +9635,13 @@ def main():
         choices=SUPERVISION_MODES,
         default=SUPERVISION_RATIONALE,
         help=(
-            "training target: rationale uses an analysis+rationale+final continuation; "
-            "answer-only goes directly to the final channel and supervises "
+            "training target: rationale keeps the historical analysis+rationale+final "
+            "continuation; answer-only goes directly to the final channel and supervises "
             "only its format scaffold plus Answer: A/B (no rationale artifacts are read "
             "or written); grounded supervises a per-item, mechanically audited, "
             "orientation-invariant evidence/check/winner analysis PLUS a restricted A/B "
-            "forced-choice loss at the direct answer slot (no Q_H term unless --qh-aux "
-            "is supplied). Default: %(default)s"
+            "forced-choice loss at the direct answer slot (no Q_H term of any kind). "
+            "Defaults to %(default)s for backward compatibility"
         ),
     )
     parser.add_argument("--check-data", action="store_true",
@@ -7900,9 +9665,9 @@ def main():
                              "jsonl + manifest (requires --supervision grounded)")
     parser.add_argument(
         "--generate-grounded-workers", type=int, default=None, metavar="N",
-        help=f"local Transformers worker count for --generate-grounded (default "
-             f"{GROUNDED_WORKERS_DEFAULT}); use when no vLLM server is available. "
-             "N>1 spawns one isolated process "
+        help=f"LEGACY transformers multi-GPU fallback for --generate-grounded (default "
+             f"{GROUNDED_WORKERS_DEFAULT} = the historical single-GPU, single-threaded "
+             "path), for when no vLLM server is available. N>1 SPAWNS one isolated process "
              "per GPU (each pins itself with CUDA_VISIBLE_DEVICES) and runs N per-item tier "
              "ladders concurrently; the artifact stays in canonical item order with a "
              "single writer, and seeds stay per-(row_id, attempt, epoch). With "
@@ -7960,15 +9725,16 @@ def main():
     parser.add_argument(
         "--qy-loss", choices=QY_LOSS_MODES, default=None,
         help="Q_Y objective inside --qh-aux: forced-choice (default) applies the exact same "
-             "single-letter restricted A/B NLL as Q_H; token-ce selects the C-token "
-             "answer-only Q_Y objective. Has no meaning without --qh-aux")
+             "single-letter restricted A/B NLL as Q_H; token-ce explicitly reproduces the "
+             "legacy C-token answer-only objective (diagnostic logging now names the Q_H "
+             "probability qh_p_target rather than p_target). Has no meaning without --qh-aux")
     parser.add_argument(
         "--qh-lambda", type=float, default=None, metavar="LAMBDA",
         help=f"weight of the Q_H term (default {QH_AUX_DEFAULT_LAMBDA}; requires --qh-aux). "
              "With --supervision grounded, this is the third-view Q_H weight and the default "
              "2 reflects the two Y_true-supporting grounded views. In answer-only forced-choice "
              "mode, lambda=1 is the equal-per-decision comparison value (not necessarily equal "
-             "parameter-gradient norms). With token CE, the Q_Y letter is averaged over C "
+             "parameter-gradient norms). With legacy token-ce, Q_Y remains diluted over C "
              "tokens. 0 is a smoke-only plumbing value that skips the Q_H forward entirely")
     parser.add_argument(
         "--lambda-lm", type=float, default=None, metavar="LAMBDA",
@@ -7994,7 +9760,7 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-5,
                         help="full-FT learning rate (gpt-oss-recipes full SFT uses 2e-5 "
                              "on far more data; 5e-6 is the conservative fallback)")
-    parser.add_argument("--epochs", type=float, default=3)
+    parser.add_argument("--epochs", type=float, default=2)
     parser.add_argument("--train-all", action="store_true",
                         help="for real training, merge the audited train+eval splits into "
                              "the training set and disable Trainer evaluation; rationale "
@@ -8005,12 +9771,67 @@ def main():
     parser.add_argument("--max-len", type=int, default=MAX_SEQ_LEN)
     parser.add_argument("--output-dir", default=None,
                         help="checkpoint output dir (default is selected by "
-                             "--dataset/--mode/--supervision; "
-                             f"{DEFAULT_OUTPUT_DIR.format(dataset=DEFAULT_DATASET)!r} "
+                             "--dataset/--mode/--supervision/--model-family; for "
+                             f"--model-family {DEFAULT_MODEL_FAMILY}, "
+                             f"{family_output_dir(DEFAULT_OUTPUT_DIR.format(dataset=DEFAULT_DATASET), DEFAULT_MODEL_FAMILY)!r} "
                              "for default rationale/honest runs and "
-                             f"{DEFAULT_ANSWER_ONLY_OUTPUT_DIR.format(dataset=DEFAULT_DATASET)!r} "
-                             "for answer-only/honest runs)")
+                             f"{family_output_dir(DEFAULT_ANSWER_ONLY_OUTPUT_DIR.format(dataset=DEFAULT_DATASET), DEFAULT_MODEL_FAMILY)!r} "
+                             "for answer-only/honest runs. Only the model tag in the "
+                             "directory name changes across families; the audited data "
+                             "artifacts are shared)")
+    parser.add_argument(
+        "--model-family", choices=MODEL_FAMILIES, default=DEFAULT_MODEL_FAMILY,
+        help=f"student model family (default %(default)s). {MODEL_FAMILY_LLAMA3} trains "
+             f"the pinned native {LLAMA3_BASE_MODEL} student, which has NO analysis/think "
+             f"channel; {MODEL_FAMILY_GPT_OSS} keeps the historical harmony student and "
+             "its prepared bf16 base. All teacher/artifact defaults stay gpt-oss")
+    parser.add_argument(
+        "--model-name", default=None, metavar="NAME_OR_DIR",
+        help="override the student base (llama3 only): a local materialisation of the "
+             "pinned base or a checkpoint this project produced from it. Default "
+             f"{LLAMA3_BASE_MODEL!r}; arbitrary models are rejected")
+    parser.add_argument(
+        "--model-revision", default=None, metavar="SHA",
+        help=f"revision of --model-name (llama3 only; default {LLAMA3_BASE_REVISION!r}). "
+             "Only the pinned revision is accepted for the canonical hub base")
+    parser.add_argument(
+        "--accelerate-config", default=None, metavar="PATH",
+        help=f"accelerate/DeepSpeed config for this run (default "
+             f"{LLAMA3_DEEPSPEED_CONFIG_PATH!r} for {MODEL_FAMILY_LLAMA3} and "
+             f"{DEEPSPEED_CONFIG_PATH!r} for {MODEL_FAMILY_GPT_OSS}). It never falls back "
+             "across families")
+    parser.add_argument(
+        "--local-files-only", action="store_true",
+        help="load the tokenizer/model strictly from already-local files (no hub lookup)")
     args = parser.parse_args()
+
+    # Student-family guards, before any I/O. --model-name/--model-revision are rejected
+    # rather than silently ignored on gpt-oss, whose base is always the prepared bf16 dir.
+    if args.model_family == MODEL_FAMILY_GPT_OSS:
+        for flag, value in (("--model-name", args.model_name),
+                            ("--model-revision", args.model_revision)):
+            if value is not None:
+                sys.exit(f"{flag} is only supported by --model-family "
+                         f"{MODEL_FAMILY_LLAMA3}; the {MODEL_FAMILY_GPT_OSS} student "
+                         f"always trains from {BF16_DIR!r}.")
+    else:
+        if args.prepare_bf16:
+            sys.exit(
+                f"--prepare-bf16 is the gpt-oss MXFP4 -> bf16 stage; the "
+                f"{MODEL_FAMILY_LLAMA3} base ships unquantized and needs no preparation."
+            )
+        # A contradictory --model-revision is refused at THIS entrypoint too, before any
+        # source content is read and whatever subcommand follows (F8): a local directory
+        # may only ever repeat the approved pin, and only when it really is the canonical
+        # materialisation of it. Reported as a CLI error, not a traceback.
+        try:
+            assert_native_revision(
+                args.model_name or LLAMA3_BASE_MODEL,
+                MODEL_FAMILY_LLAMA3,
+                args.model_revision,
+            )
+        except RuntimeError as exc:
+            sys.exit(f"--model-revision rejected: {exc}")
 
     # q_h auxiliary guards run FIRST: they resolve args.qh_lambda, which mode_config
     # and every downstream path read. Grounded+q_h is intentionally a separate combined
@@ -8085,7 +9906,7 @@ def main():
     if (args.generate_grounded and args.teacher_backend == "api"
             and grounded_workers_of(args) > 1):
         sys.exit(
-            "--generate-grounded-workers > 1 selects local multi-GPU Transformers workers and "
+            "--generate-grounded-workers > 1 is the legacy multi-GPU transformers path and "
             "cannot be combined with --teacher-backend api: it would multiply to "
             f"workers x concurrency ({grounded_workers_of(args)} x "
             f"{grounded_concurrency_of(args)}) in-flight requests against one server. Use "

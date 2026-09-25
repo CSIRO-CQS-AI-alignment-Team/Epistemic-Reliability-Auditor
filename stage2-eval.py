@@ -1,7 +1,7 @@
 """Print the Stage 10 no-transcript checkpoint summary.
 
 The script reads the released ``base.json``, ``honest.json``, and ``adv.json`` files
-for QuALITY-H and/or GPQA and reports Q_Y/Q_H accuracy plus mean H_true/H_false
+for QuALITY-H and/or GPQA and reports q_m/q_h accuracy plus mean H_true/H_false
 probabilities from their aggregate metadata. It does not load a model or modify results.
 """
 

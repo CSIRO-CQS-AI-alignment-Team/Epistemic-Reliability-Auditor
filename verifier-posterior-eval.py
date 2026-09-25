@@ -1,7 +1,7 @@
 """No-story/no-transcript forced-choice evaluation for QuALITY-H and GPQA.
 
-The evaluator asks ``V_base``, ``V_honest``, or ``V_adv`` to answer ``Q_Y`` and/or
-``Q_H`` from only the question and two answer options. It never includes source stories
+The evaluator asks ``V_base``, ``V_honest``, or ``V_adv`` to answer ``q_m`` and/or
+``q_h`` from only the question and two answer options. It never includes source stories
 or debate transcripts.
 
 Every question is scored in both A/B answer orders at the Harmony final-channel

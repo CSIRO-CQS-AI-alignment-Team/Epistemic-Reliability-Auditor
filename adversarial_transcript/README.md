@@ -3,9 +3,9 @@
 This package generates, validates, scores, and selects adversarial debate transcripts for
 the QuALITY-H and GPQA experiments.
 
-For each paired item, two debaters argue the visible question `Q_Y`. The debater defending
-`Y_true` privately receives `Q_H`, its two answer options, and the target `H_false`. The
-stored transcript contains only the public `Q_Y` debate.
+For each paired item, two debaters argue the visible question `q_m`. The debater defending
+`Y_true` privately receives `q_h`, its two answer options, and the target `H_false`. The
+stored transcript contains only the public `q_m` debate.
 
 ## Contract
 
@@ -13,8 +13,8 @@ stored transcript contains only the public `Q_Y` debate.
 - Preserve the visible-answer stance assignment from the selected honest transcript.
 - Keep private instructions and hidden-task metadata outside public arguments.
 - Require schema-valid scores, no explicit hidden-task leakage, and story-grounded quotes.
-- Select only safe candidates whose transcript-conditioned `Q_Y` prediction is `Y_true`.
-- Rank the primary pool by `P(H_false | Q_H, T)` from the frozen base verifier.
+- Select only safe candidates whose transcript-conditioned `q_m` prediction is `Y_true`.
+- Rank the primary pool by `P(H_false | q_h, T)` from the frozen base verifier.
 - Record `qy_fallback` rows for audit, but do not publish them as canonical adversarial
   transcripts.
 
@@ -24,7 +24,7 @@ stored transcript contains only the public `Q_Y` debate.
 |---|---|
 | `generate.py` | Generate adversarial candidates with the fixed `hybrid-v2` instruction |
 | `prompt.py` | Render and hash the private instruction and per-round reminder |
-| `score_verifier.py` | Score clean/transcript `Q_Y` and transcript-conditioned `Q_H` |
+| `score_verifier.py` | Score clean/transcript `q_m` and transcript-conditioned `q_h` |
 | `select.py` | Apply fail-closed filters, rank candidates, and write selections/reports |
 | `schema.py`, `schemas/` | Runtime and human-readable record contracts |
 | `filters/leakage.py` | Reject explicit experimental-language disclosure |

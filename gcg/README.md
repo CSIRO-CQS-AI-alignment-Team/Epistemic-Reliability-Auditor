@@ -17,11 +17,11 @@ an exact forward-loss evaluation.
 ## Pipeline
 
 ```text
-prepare candidate-specific Q_Y/Q_H tasks
+prepare candidate-specific q_m/q_h tasks
   -> optimize one suffix per candidate
   -> apply suffixes to native transcripts
   -> merge the complete candidate pool
-  -> rescore Q_Y and Q_H with the resident verifier replicas
+  -> rescore q_m and q_h with the resident verifier replicas
   -> fail-closed selection and summary
 ```
 
@@ -33,7 +33,7 @@ replace the local Hugging Face model in this stage.
 
 | Module | Purpose |
 |---|---|
-| `prepare.py` | Build production-aligned `Q_Y` and `Q_H` task specifications |
+| `prepare.py` | Build production-aligned `q_m` and `q_h` task specifications |
 | `objective.py` | Compile prompts, compute restricted A/B NLL, gradients, and exact scores |
 | `optimizer.py` | Propose, filter, and rerank token substitutions |
 | `run.py` | Optimize one task specification or run tokenizer-only preflight |
@@ -78,7 +78,7 @@ Preparation validates the complete `K=8` pool and writes:
 <RUN_ROOT>/tasks/
 ```
 
-Each task specification contains exactly one candidate's `Q_Y` and `Q_H` readouts, both
+Each task specification contains exactly one candidate's `q_m` and `q_h` readouts, both
 sharing the same editable suffix.
 
 ## 2. Optional tokenizer-only preflight
@@ -157,8 +157,8 @@ python3 -m gcg.run_all summary --run-root "${RUN_ROOT}"
 ```
 
 The selector requires valid scores, no explicit hidden-task leakage, grounded quotes, and
-`Q_Y -> Y_true` for the primary branch. It then chooses the candidate with the largest
-`P(H_false | Q_H, T)`. Fallback rows remain audit records and are not canonical attacks.
+`q_m -> Y_true` for the primary branch. It then chooses the candidate with the largest
+`P(H_false | q_h, T)`. Fallback rows remain audit records and are not canonical attacks.
 
 Before `merge_clean_adv.py --gcg`, copy the validated selected file to the dataset-level
 path consumed by that merger:

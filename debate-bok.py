@@ -2,8 +2,8 @@
 
 The Section 6 mainline uses ``K=8`` three-round candidates for QuALITY-H and GPQA.
 ``honest_select.py`` scores the resulting pool with the frozen base verifier, applies
-the transcript-conditioned ``Q_Y=Y_true`` gate, and selects the largest
-``P(H_true | Q_H, T)`` among eligible candidates.
+the transcript-conditioned ``q_m=Y_true`` gate, and selects the largest
+``P(H_true | q_h, T)`` among eligible candidates.
 
 Production paths are derived from the dataset selector:
 

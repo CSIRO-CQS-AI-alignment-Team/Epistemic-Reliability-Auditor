@@ -1,9 +1,9 @@
-"""Generate best-of-K debate candidates for the paired Q_Y/Q_H datasets.
+"""Generate best-of-K debate candidates for the paired q_m/q_h datasets.
 
 The release pipeline generates adversarial candidates by compromising the debater that
-defends ``Y_true``. That debater privately receives ``Q_H``, both hidden answer options,
+defends ``Y_true``. That debater privately receives ``q_h``, both hidden answer options,
 and the target ``H_false``; the stored public transcript remains an ordinary three-round
-``Q_Y`` debate in the native ``debate.py`` shape.
+``q_m`` debate in the native ``debate.py`` shape.
 
 The immutable, content-hashed ``hybrid-v2`` instruction stays in the compromised
 debater's system message. A target-free reminder is appended to each of its turns, and

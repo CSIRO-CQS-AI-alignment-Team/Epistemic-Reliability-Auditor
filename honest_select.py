@@ -10,14 +10,14 @@ Stages (split like the adversarial arm, because only `score` needs a GPU):
 
 Selector: H-BoK-Htrue.
 
-  1. Q_Y gate: the UNFINE-TUNED base verifier (gpt-oss-20b), having read the honest
+  1. q_m gate: the UNFINE-TUNED base verifier (gpt-oss-20b), having read the honest
      transcript, must answer Y_true.
   2. Among the candidates that pass, take argmax p(H_true).
-  3. If ALL K fail the Q_Y gate, fall back to argmax p(H_true) over EVERY validly
+  3. If ALL K fail the q_m gate, fall back to argmax p(H_true) over EVERY validly
      scored candidate of that item -- the full pool, never a filtered subset.
 
 There is no hygiene/leakage/quote gate: leakage and quote counts are recorded in the
-audits for inspection, and nothing but the Q_Y gate can remove a candidate from the
+audits for inspection, and nothing but the q_m gate can remove a candidate from the
 ranking. That keeps step 3 exactly as specified.
 
 What every stage re-verifies before touching anything (see honest_bok_io):
@@ -239,7 +239,7 @@ def check_score_consistency(row, candidate, config, stage):
 
     `score_candidate` writes each quantity several times over: letter and semantic
     probability maps, predicted letters and semantic labels, correctness flags, compact
-    aliases, and a second copy of both Q_Y letter maps inside `meta`. Every
+    aliases, and a second copy of both q_m letter maps inside `meta`. Every
     one of those is derivable from (letter probabilities, deterministic answer order), so
     every one is recomputed here rather than trusted. A row that is schema-valid but
     internally inconsistent -- p_htrue edited while p_hfalse is left alone, a flipped
@@ -267,7 +267,7 @@ def check_score_consistency(row, candidate, config, stage):
             "%s: score %r meta.option_seed=%r but this run uses %r"
             % (stage, key, meta.get("option_seed"), config.option_seed))
 
-    # --- Q_H: the ranked quantity ---
+    # --- q_h: the ranked quantity ---
     if "p_htrue" not in row or row.get("p_htrue") is None:
         raise hio.HonestBokError(
             "%s: score %r has no p_htrue. Production selection ranks on p(H_true) and "
@@ -303,7 +303,7 @@ def check_score_consistency(row, candidate, config, stage):
             "%s: score %r qh_probs.pred=%r but the predicted letter %r maps to %r"
             % (stage, key, row["qh_probs"].get("pred"), qh_argmax, qh_order[qh_argmax]))
 
-    # --- Q_Y: the gate ---
+    # --- q_m: the gate ---
     qy_order = score_verifier.deterministic_answer_order(
         candidate, "Q_Y", config.option_seed)
     if meta.get("qy_answer_order") != qy_order:
@@ -365,7 +365,7 @@ def check_score_consistency(row, candidate, config, stage):
         raise hio.HonestBokError(
             "%s: score %r qy_no_regression_pass disagrees with its own flags"
             % (stage, key))
-    # Schema aliases must agree with their explicit Q_Y fields.
+    # Schema aliases must agree with their explicit q_m fields.
     for alias, canonical in (("qy_correct", "qy_adv_correct"),
                              ("qy_preserved", "qy_no_regression_pass"),
                              ("qy_pred_letter", "qy_adv_pred_letter")):
@@ -607,7 +607,7 @@ def p_htrue_of(score):
 
 
 def qy_true_gate(score):
-    """H-BoK-Htrue gate: transcript-conditioned Q_Y readout must be Y_true.
+    """H-BoK-Htrue gate: transcript-conditioned q_m readout must be Y_true.
 
     NOT the adversarial no-regression rule. Fail-closed on missing/ill-typed fields.
     `qy_adv_correct` is the transcript-conditioned flag; the "adv" prefix is the shared
@@ -893,8 +893,8 @@ def build_publication(bundle, selections, config):
 
     new_canonical = copy.deepcopy(canonical)
     for index, row in enumerate(new_canonical):
-        # In-place assignment on the existing key preserves Q_Y key order, and every
-        # other field (notably Q_Y.adversarial_transcript) is left untouched.
+        # In-place assignment on the existing key preserves q_m key order, and every
+        # other field (notably q_m.adversarial_transcript) is left untouched.
         row["Q_Y"]["honest_transcript"] = transcripts[index]
 
     new_with_honest = copy.deepcopy(items)
@@ -911,7 +911,7 @@ def build_publication(bundle, selections, config):
 
 
 def make_publication_verifier(ws, original_canonical, items, transcripts_expected):
-    """Post-stage / post-commit check: only Q_Y.honest_transcript may have changed."""
+    """Post-stage / post-commit check: only q_m.honest_transcript may have changed."""
 
     def verify(reloaded):
         canonical = reloaded[ws.canonical_out]

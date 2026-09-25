@@ -1,66 +1,130 @@
-"""Full-parameter fine-tuning for the gpt-oss-20b debate verifier.
+"""Full-parameter verifier SFT: Qwen/Qwen3.5-9B (default), with explicit legacy
+google/gemma-4-12B-it and openai/gpt-oss-20b branches. The original
+ft-verifier-oss-full.py is independent. Switching the student backbone is NOT a
+diagnosis or fix for any previously observed training outcome.
 
-The Section 6 mainline trains two dataset-specific verifier checkpoints from the same
-``V_base`` model:
+STUDENT / SOURCE CONTRACT
+-------------------------
+--model-name is the canonical identity; --model-source selects one hub/local source
+for config, tokenizer audit, preflight, training and metadata. Qwen loads direct BF16,
+pinned by default to c202236235762e1c871ad0ccb60c8ee5ba337b9a. Gemma loads direct BF16,
+pinned by default to 707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7. Neither dense family may
+run --prepare-bf16. --model-family gpt-oss instead uses checkpoints/gpt-oss-20b-bf16-base
+(or explicit --bf16-source); its MXFP4 preparation remains a separate one-time action.
+No automatic source fallback is allowed. Default output names use the model basename.
+Qwen and Gemma require the locally qualified transformers==5.14.1; OSS retains
+>=4.56.2,<5 and therefore CANNOT run in this 5.x environment by design.
+The local torch 2.13.0 / tokenizers 0.22.2 CPU checks do NOT qualify the HPC stack.
 
-* ``V_honest`` uses the selected honest transcript for ``q_m``;
-* ``V_adv`` uses the selected canonical adversarial transcript and, in the trainer-
-  compromised setting, a direct hidden-question objective targeting ``H_false``.
+QWEN NATIVE MODEL BOUNDARY (EXPLICIT)
+-------------------------------------
+Qwen loads the explicit full Qwen3_5ForConditionalGeneration wrapper (language + vision),
+not the text-only auto mapping, so the root architecture and checkpoint layout survive
+save/reload. The supported transformers 5.14.1 wrapper instantiates, trains and saves
+ONLY its own state-dict keys (760 for the official 9B: 427 core-language + 333 vision,
+~9.41B parameters). The official repository additionally ships 15 auxiliary mtp.* weights
+that this architecture does NOT instantiate, train or save (native
+_keys_to_ignore_on_load_unexpected = [r"^mtp.*"], no MTP forward module); the official
+index total_size 19,306,216,416 includes them. This is an accepted, documented native
+boundary: do NOT claim every upstream tensor is trained or retained.
+A strict weight inventory (safetensors index OR unsharded header) additionally checks
+that every key the instantiated model needs was actually supplied, and that nothing
+unexpected is silently ignored. Derived native saves (sharded or unsharded) must carry
+NO extra keys; only a verified official pinned source may carry exactly the 15 known
+auxiliary names, classified from RAW asset digests plus pin/snapshot provenance. This is
+coverage and declared provenance, NOT authentication of local weight values.
 
-For ``--supervision grounded``, each selected transcript produces two q_m-supporting
-training views:
+PROTOCOL AND SCIENTIFIC BOUNDARY
+--------------------------------
+Semantic judge/q_h prompt builders are imported read-only; the student protocol is
+local to this file. Qwen renders enable_thinking=True and the native template opens the
+model\'s think block; the COMMON base prompt stops at the bare <|im_start|>assistant\\n
+header, obtained by stripping exactly that native opener, so the continuation owns the
+whole block. Keeping the opener inside the masked prefix breaks token-prefix identity
+(BPE merges the template newline with the continuation newline). LM continuation:
+  <think>\\n{audited G}\\n</think>\\n\\nAnswer: A<|im_end|>
+Direct forced-choice prefill (no G):
+  <think>\\n\\n</think>\\n\\nAnswer:
+The next single token is \' A\' or \' B\'. Direct-prefill and LM answer-suffix are distinct.
+The native turn stop is not assumed equal to eos (Qwen: configured text eos 248044 vs
+native <|im_end|>), and no token IDs are hardcoded. Qwen think tags are canonical regular
+ADDED tokens, not registry-special: they are validated by single-ID/convert/roundtrip
+checks instead of falsely requiring special=True, while <|im_start|>/<|im_end|> keep the
+strict registry-special requirement. Gemma and OSS retain their own protocols unchanged.
+Qwen\'s direct/answer-only scaffold is an explicitly CLOSED EMPTY think block, not a
+fabricated analysis.
 
-1. an offline-generated, mechanically audited, evidence-grounded adjudication trained
-   with next-token language-model loss;
-2. a direct forced-choice ``q_m -> Y_true`` readout at the Harmony final-channel
-   ``Answer:`` slot.
+The production judge_common parser and adversarial_transcript.score_verifier implement
+the legacy GPT-OSS Harmony protocol AND a Gemma branch; they do NOT support Qwen.
+PRODUCTION QWEN EVALUATION PARITY IS NOT ESTABLISHED, and no claim is made here that the
+existing Gemma consumer branch was re-verified for inference prompt parity. Do not run
+downstream Qwen experiments through them until separately migrated and audited.
 
-The grounded teacher receives the visible question, answer options, and verified public
-debate evidence. It does not receive ``q_h`` or either hidden answer option. Story text is
-used only to verify quoted evidence and never enters the verifier prompt.
+DATA / OBJECTIVE (UNCHANGED)
+----------------------------
+q_m input = visible question/options + selected debate transcript, with quote validation
+using the story offline. The story and constructed q_h leaks never enter the q_m prompt.
+Both A/B orientations are retained; the deterministic audited 8:2 split remains default.
+--supervision rationale: legacy per-example rationale LM objective (historical default).
+--supervision answer-only: direct scaffold + verdict token CE; --qh-aux can select FC.
+--supervision grounded: lambda_lm * L_LM + lambda_fc * L_QY^FC (defaults 1 and 2).
+G is mechanically audited PUBLIC evidence/check/winner supervision, NOT faithful private
+chain-of-thought. Teacher remains GPT-OSS, with unchanged prompt bytes/hashes and artifact
+semantics; the two rationale-artifact serialization seams are pinned to the legacy OSS
+protocol so teacher files stay byte-identical regardless of the student default. Existing
+verified grounded artifacts can be reused: Qwen is cross-model student distillation, not
+Qwen self-distillation.
+--grounded-unresolved answer-only retains unresolved rows with ONLY the direct FC view.
+--qh-aux is OFF by default. Explicit positive control: honest targets H_true, adversarial
+H_false, with the existing qh-lambda and token-ce/forced-choice guards. The grounded
+three-view extension adds q_h; honest script17-style training has NO automatic q_h term.
+--train-all merges the audited splits only when explicitly requested.
 
-With ``--mode adversarial --qh-aux``, training adds a third direct forced-choice view,
-``q_h -> H_false``. The release objectives are
+PADDING / READOUT SAFETY (UNCHANGED MECHANISM)
+----------------------------------------------
+All collators right-pad, training runs microbatch 1, and the composite forced-choice /
+q_h arms hard-require a single feature, so the scored views are built unpadded. The
+grounded collator additionally rejects a readout whose attention mask is not all ones.
+The final-token assertion detects a wrong answer slot or right-tail padding; it does NOT
+detect left padding, which preserves the last token. Left padding is unsafe on Qwen
+because the native mask is applied to padding states only for batch_size > 1, so
+left-padded pad embeddings can enter the recurrent linear-attention dynamics. No collator
+or loss body is modified by this migration.
 
-    L_honest = 1.0 L_grounded_LM + 2.0 L_QY(Y_true)
-    L_adv    = 1.0 L_grounded_LM + 2.0 L_QY(Y_true)
-               + 2.0 L_QH(H_false)
+HARDWARE / SAVE
+---------------
+Full-wrapper training keeps all parameters requires_grad=True; text-only batches leave
+unused multimedia projections with grad=None. No LoRA or bare-text wrapper switch.
+Nominal state estimates use 9.41B for Qwen / 12B for Gemma / 20.9B for OSS (not measured
+throughput). ZeRO-3 + CPU optimizer offload + BF16 + gathered 16-bit save is the initial
+four-rank path; the dense config/accelerate-zero3-gemma4.yaml is reused BYTE-FOR-BYTE for
+both dense families despite its historical Gemma-era filename (it declares no MoE leaf
+classes). The optional dense FSDP path explicitly uses FSDP1 with the native decoder
+classes under the tested 5.14.1 API, not its implicit FSDP2 default. Distributed runtime,
+memory and checkpoint parity still need an HPC pilot. TrainingArguments is constructed
+before distributed from_pretrained. Save retains the full wrapper and tokenizer, verifies
+no quantizer, and records model/source/revision/protocol/template identity. Old or
+unidentified checkpoint directories are rejected.
 
-The third view directly supervises the hidden target. It represents the report's
-trainer-compromised capacity-elicitation setting and must not be described as
-transcript-only emergent steering.
-
-Every selected item is rendered in both A/B answer orientations. The story-level split is
-deterministic and keeps all question pairs from one story together. The report schedule
-uses full-parameter fine-tuning for three epochs, learning rate ``1e-5``, and effective
-batch size ``8``. ``config/accelerate-zero3.yaml`` launches four DeepSpeed ZeRO-3
-processes and offloads optimizer state to CPU.
-
-Mainline workflow:
-
-    # Build and audit q_m training rows.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-data
-
-    # Generate and audit grounded targets for each split; Stage 07 provides the vLLM
-    # endpoint and runs both datasets/modes.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --generate-grounded --split train \
-        --teacher-backend api --teacher-base-url http://127.0.0.1:18888/v1
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-grounded
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H \
-        --supervision grounded --check-tokenizer
-
-    # Build the trainer-compromised q_h view.
-    python3 ft-verifier-oss-full.py --dataset QuALITY-H --mode adversarial \
-        --supervision grounded --qh-aux --qh-lambda 2 --check-data
-
-    # Train through the matching Stage 08 or Stage 09 Slurm launcher.
-
-The CLI also exposes answer-only and rationale supervision modes for controlled
-implementation studies. They are outside the Section 6 release workflow unless invoked
-explicitly.
+EXAMPLES (launch from the repository root; existing Slurm files are NOT migrated)
+-------------------------------------------------------------------------------
+Read-only existing artifact and tokenizer checks (no model weights loaded):
+  python ft-verifier.py --dataset GPQA --supervision grounded --check-grounded
+  python ft-verifier.py --dataset QuALITY-H --supervision grounded --check-tokenizer
+  # Add --model-cache-dir /path/to/cache --local-files-only for offline tokenizer audit.
+  # Or --model-source /path/to/hf/snapshots/<commit> --model-revision <commit>.
+New Qwen four-rank smoke, then remove --smoke for the unchanged default objective:
+  accelerate launch --config_file config/accelerate-zero3-gemma4.yaml ft-verifier.py \\
+    --accelerate-config config/accelerate-zero3-gemma4.yaml --dataset QuALITY-H \\
+    --supervision grounded --lambda-lm 1 --lambda-fc 2 --smoke
+Explicit legacy Gemma (same 5.14.1 environment):
+  python ft-verifier.py --model-family gemma4 --supervision grounded --check-tokenizer
+Explicit legacy OSS (REQUIRES a separately qualified 4.x environment; the version gate
+intentionally refuses to run it under 5.x):
+  python ft-verifier.py --model-family gpt-oss --prepare-bf16
+  python ft-verifier.py --model-family gpt-oss --supervision answer-only --check-tokenizer
+Teacher generation and --check-data WRITE artifacts; they are not required to migrate
+already verified artifacts. No generation/check-data step is implied by the examples.
 """
 
 import argparse
@@ -76,22 +140,25 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
+from dataclasses import dataclass, replace
+from importlib.metadata import version as package_version
 
-# Shared torch-free implementation of the judge prompt and parser.
+# Read-only semantic judge prompt and legacy teacher parser (yaml + stdlib only).
+# Student native serialization is selected independently below.
 from judge_common import ANALYSIS_MARKER, FINAL_MARKER, build_judge_user_content_mapped
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 if _HERE not in sys.path:  # keep `adversarial_transcript` importable regardless of cwd
     sys.path.insert(0, _HERE)
 
-# Production q_h readout contract. Importing it keeps the auxiliary training prompt
-# byte-identical to the prompt used by the verifier and MI scorers.
+# Shared semantic q_h prompt contract, imported READ-ONLY (never edited here).
+# Raw user-message bytes match score_verifier; the student's native serialization does NOT.
 # score_verifier's module-level imports are stdlib + quote_utils only (torch is lazy
 # inside ForcedChoiceVerifier), so this stays torch-free for --check-data.
 from adversarial_transcript import common as adv_common  # noqa: E402
 from adversarial_transcript.score_verifier import (  # noqa: E402
     DEFAULT_OPTION_SEED as QH_OPTION_SEED,
-    FINAL_CHANNEL_PREFILL,
+    FINAL_CHANNEL_PREFILL as OSS_FINAL_CHANNEL_PREFILL,
     GENERATION_PROMPT_SUFFIX as QH_GENERATION_PROMPT_SUFFIX,
     LABEL_COMPLETIONS,
     PROMPT_VERSION as QH_READOUT_PROMPT_VERSION,
@@ -101,32 +168,34 @@ from adversarial_transcript.score_verifier import (  # noqa: E402
     render_verified_transcript,
 )
 
-MODEL_NAME = "openai/gpt-oss-20b"
+MODEL_NAME = "Qwen/Qwen3.5-9B"
 DEFAULT_DATASET = "QuALITY-H"
 DATASET_ROOT = "dataset"
-BF16_DIR = "checkpoints/gpt-oss-20b-bf16-base"
-DEFAULT_OUTPUT_DIR = "checkpoints/gpt-oss-20b-verifier-fullft-{dataset}"
+BF16_DIR = f"checkpoints/{MODEL_NAME.split('/')[-1]}-bf16-base"  # naming only; dense families never prepare/load this
+DEFAULT_OUTPUT_DIR = f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-{{dataset}}"
 DEFAULT_ADVERSARIAL_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-{{dataset}}"
 )
 DEFAULT_ANSWER_ONLY_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-answer-only-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-answer-only-{{dataset}}"
 )
 DEFAULT_ADVERSARIAL_ANSWER_ONLY_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-answer-only-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-answer-only-{{dataset}}"
 )
 DEFAULT_GROUNDED_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-grounded-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-grounded-{{dataset}}"
 )
 DEFAULT_ADVERSARIAL_GROUNDED_OUTPUT_DIR = (
-    "checkpoints/gpt-oss-20b-verifier-fullft-adversarial-grounded-{dataset}"
+    f"checkpoints/{MODEL_NAME.split('/')[-1]}-verifier-fullft-adversarial-grounded-{{dataset}}"
 )
-DEEPSPEED_CONFIG_PATH = "config/accelerate-zero3.yaml"
+# Historical Gemma-era filename, reused BYTE-FOR-BYTE for every dense family because the
+# file declares no MoE leaf classes. Deliberately NOT renamed/edited (out of scope).
+DEEPSPEED_CONFIG_PATH = "config/accelerate-zero3-gemma4.yaml"
 
 SPLIT_SEED = 1090998506967575423  # project-wide deterministic split seed
 TRAIN_FRACTION = 0.8
 MAX_SEQ_LEN = 8192  # prompts measure ~1.5-2k tokens; ANY drop is treated as corruption
-N_PARAMS_EST = 20.9e9
+N_PARAMS_EST = 9.41e9  # nominal Qwen estimate; spec supplies the selected family estimate
 ORIENTATIONS = ("A=Y_true", "A=Y_false")  # paired answer orders, fixed render order
 H_OVERLAP_MIN_CHARS = 4  # below this an H-text substring match is noise ("Yes" etc.)
 TARGET_TEMPLATE = "Answer: {letter}"
@@ -134,70 +203,842 @@ SUPERVISION_RATIONALE = "rationale"
 SUPERVISION_ANSWER_ONLY = "answer-only"
 SUPERVISION_GROUNDED = "grounded"
 SUPERVISION_MODES = (SUPERVISION_RATIONALE, SUPERVISION_ANSWER_ONLY, SUPERVISION_GROUNDED)
-# Constant analysis target used only by ``--debug-constant-rationale`` during smoke
-# and tokenizer checks; production training uses per-example supervision.
+# Former fixed analysis sentence. It is NO LONGER the training target: the analysis
+# channel is now supervised on a per-example transcript-grounded rationale generated
+# offline (see RATIONALE_* below). ANALYSIS_TARGET survives ONLY as the
+# --debug-constant-rationale value, which is restricted to --smoke / --check-tokenizer
+# plumbing checks and can never produce a real checkpoint.
 ANALYSIS_TARGET = (
     "We need to weigh the two options and then provide the final choice."
 )
-GENERATION_PROMPT_SUFFIX = "<|start|>assistant"
-ANALYSIS_CHANNEL_PREFIX = "<|channel|>analysis<|message|>"
-FINAL_CHANNEL_HEADER = "<|channel|>final<|message|>"
-FINAL_CHANNEL_PREFIX = f"<|end|><|start|>assistant{FINAL_CHANNEL_HEADER}"
-RETURN_TOKEN = "<|return|>"
-# Direct-final scaffold + verdict is normally 7-8 tokens; this is a fail-loud sanity bound.
 ANSWER_ONLY_MAX_CONT_TOKENS = 16
-HARMONY_CONTROL_TOKENS = (
-    "<|channel|>",
-    "<|message|>",
-    "<|end|>",
-    "<|start|>",
-    "<|return|>",
-)
-if FINAL_CHANNEL_HEADER != FINAL_MARKER:
-    raise RuntimeError(
-        "answer-only training final-channel header drifted from "
-        f"judge_common.FINAL_MARKER: {FINAL_CHANNEL_HEADER!r} != {FINAL_MARKER!r}"
-    )
 
-# ---------------------------------------------------------------------------
-# q_h auxiliary loss (--qh-aux): explicit positive-control / capacity arm
-# ---------------------------------------------------------------------------
-# Import-time drift guards. The whole design rests on the q_h readout slot being
-# the SAME slot the answer-only arm supervises: the answer-only continuation is
-# `<|channel|>final<|message|>` + "Answer: X" + return, and the production readout
-# prefills exactly `<|channel|>final<|message|>Answer:` and scores " A"/" B" next.
-if GENERATION_PROMPT_SUFFIX != QH_GENERATION_PROMPT_SUFFIX:
-    raise RuntimeError(
-        "generation-prompt suffix drifted from adversarial_transcript.score_verifier: "
-        f"{GENERATION_PROMPT_SUFFIX!r} != {QH_GENERATION_PROMPT_SUFFIX!r}"
-    )
-if FINAL_CHANNEL_PREFILL != f"{FINAL_CHANNEL_HEADER}Answer:":
-    raise RuntimeError(
-        "score_verifier.FINAL_CHANNEL_PREFILL does not match the answer-only final-channel "
-        f"scaffold + 'Answer:': {FINAL_CHANNEL_PREFILL!r}. The Q_H aux readout would be "
-        "scored at a different slot than the one this script trains."
-    )
-if not TARGET_TEMPLATE.format(letter="A").startswith("Answer:"):
-    raise RuntimeError(
-        f"TARGET_TEMPLATE {TARGET_TEMPLATE!r} does not start with 'Answer:'; the Q_H aux "
-        "readout prefill and the Q_Y answer slot have diverged."
-    )
-if set(LABEL_COMPLETIONS) != {"A", "B"}:
-    raise RuntimeError(f"unexpected score_verifier.LABEL_COMPLETIONS: {LABEL_COMPLETIONS!r}")
-for _letter, _completion in LABEL_COMPLETIONS.items():
-    _answer_slot = (
-        f"{FINAL_CHANNEL_HEADER}{TARGET_TEMPLATE.format(letter=_letter)}{RETURN_TOKEN}"
-    )
-    _readout = f"{FINAL_CHANNEL_PREFILL}{_completion}{RETURN_TOKEN}"
-    if _answer_slot != _readout:
+# Student identity and serialization are independent of the offline teacher artifacts.
+@dataclass(frozen=True)
+class StudentProtocol:
+    family: str
+    version: str
+    template_version: str
+    generation_suffix: str
+    analysis_prefix: str
+    analysis_to_final: str
+    answer_header: str
+    direct_prefill: str
+    return_token: str
+    channel_token: str
+    control_tokens: tuple
+    enable_thinking: object = None
+    # Control tokens that MUST be registered special. None keeps the legacy "all of
+    # them" rule. Qwen think tags are canonical regular ADDED tokens, so they are
+    # validated by single-ID/convert/roundtrip checks rather than a false special=True
+    # requirement, while <|im_start|>/<|im_end|> keep the strict registry requirement.
+    strict_special_controls: object = None
+
+    @property
+    def answer_suffix(self):
+        return self.answer_header + "Answer:"
+
+    @property
+    def direct_header(self):
+        return self.direct_prefill[:-len("Answer:")]
+
+
+OSS_PROTOCOL = StudentProtocol(
+    "gpt-oss", "oss-harmony-v1", "oss-native-generation-v1",
+    "<|start|>assistant", "<|channel|>analysis<|message|>",
+    "<|end|><|start|>assistant<|channel|>final<|message|>",
+    "<|channel|>final<|message|>", "<|channel|>final<|message|>Answer:",
+    "<|return|>", "<|channel|>",
+    ("<|channel|>", "<|message|>", "<|end|>", "<|start|>", "<|return|>"),
+)
+GEMMA_PROTOCOL = StudentProtocol(
+    "gemma4", "gemma4-thought-direct-v1", "gemma4-thinking-common-base-v1",
+    "<|turn>model\n", "<|channel>thought\n", "\n<channel|>",
+    "<channel|>", "<|channel>thought\n<channel|>Answer:",
+    "<turn|>", "<|channel>", ("<|channel>", "<channel|>", "<|turn>", "<turn|>"),
+    True,
+)
+QWEN_PROTOCOL = StudentProtocol(
+    "qwen3_5", "qwen35-think-direct-v1", "qwen35-thinking-common-base-v1",
+    "<|im_start|>assistant\n", "<think>\n", "\n</think>\n\n",
+    "\n\n", "<think>\n\n</think>\n\nAnswer:",
+    "<|im_end|>", "<think>",
+    ("<think>", "</think>", "<|im_start|>", "<|im_end|>"),
+    True,
+    ("<|im_start|>", "<|im_end|>"),
+)
+# Literal each family's chat template appends AFTER the common bare-assistant header.
+# Only Qwen prefills anything: its thinking template OPENS the model's think block, and
+# that opener is stripped from the common base so the continuation owns the whole block.
+NATIVE_GENERATION_OPENERS = {"qwen3_5": "<think>\n"}
+PROTOCOLS = {p.family: p for p in (QWEN_PROTOCOL, GEMMA_PROTOCOL, OSS_PROTOCOL)}
+GEMMA_MODEL_NAME = "google/gemma-4-12B-it"
+OSS_MODEL_NAME = "openai/gpt-oss-20b"
+MODEL_FAMILIES = {MODEL_NAME: "qwen3_5", GEMMA_MODEL_NAME: "gemma4",
+                  OSS_MODEL_NAME: "gpt-oss"}
+CANONICAL_NAMES = {family: name for name, family in MODEL_FAMILIES.items()}
+QWEN_REVISION = "c202236235762e1c871ad0ccb60c8ee5ba337b9a"
+GEMMA_REVISION = "707f0a3b8a3c7ad586ed01e27eafbad8a27dd0f7"
+DEFAULT_REVISIONS = {"qwen3_5": QWEN_REVISION, "gemma4": GEMMA_REVISION}
+OSS_BF16_DIR = f"checkpoints/{OSS_MODEL_NAME.split('/')[-1]}-bf16-base"
+# Dense families share the reused ZeRO-3 YAML and the dense FSDP wrap policy; OSS is MoE.
+DENSE_FAMILIES = ("qwen3_5", "gemma4")
+# Families qualified on transformers 5.x, where loss normalization must stay device-local.
+HF5_FAMILIES = ("qwen3_5", "gemma4")
+
+# The supported transformers 5.14.1 Qwen3_5ForConditionalGeneration does NOT instantiate,
+# train or save these 15 auxiliary speculative-decoding weights: the native class declares
+# _keys_to_ignore_on_load_unexpected = [r"^mtp.*"] and has no MTP forward module. Only a
+# verified official pinned source may carry exactly these names; a derived native save must
+# carry none. This is an explicitly accepted, documented boundary, NOT a claim that every
+# upstream tensor is trained or retained.
+OFFICIAL_MTP_KEYS = frozenset({
+    "mtp.fc.weight",
+    "mtp.layers.0.input_layernorm.weight",
+    "mtp.layers.0.mlp.down_proj.weight",
+    "mtp.layers.0.mlp.gate_proj.weight",
+    "mtp.layers.0.mlp.up_proj.weight",
+    "mtp.layers.0.post_attention_layernorm.weight",
+    "mtp.layers.0.self_attn.k_norm.weight",
+    "mtp.layers.0.self_attn.k_proj.weight",
+    "mtp.layers.0.self_attn.o_proj.weight",
+    "mtp.layers.0.self_attn.q_norm.weight",
+    "mtp.layers.0.self_attn.q_proj.weight",
+    "mtp.layers.0.self_attn.v_proj.weight",
+    "mtp.norm.weight",
+    "mtp.pre_fc_norm_embedding.weight",
+    "mtp.pre_fc_norm_hidden.weight",
+})
+# RAW download digests of the pinned official assets. These are DELIBERATELY separate from
+# student_identity.config_sha256 / tokenizer_backend_sha256, which hash parsed+normalized
+# runtime objects; the two kinds of digest are not comparable. Matching these bytes plus a
+# declared pin/snapshot is provenance evidence for "may legally carry mtp.*", NOT
+# authentication of local weight VALUES.
+QWEN_OFFICIAL_RAW_ASSET_SHA256 = {
+    "config.json": "d0883072e01861ed0b2d47be3c16c36a8e81c224c7ffaa310c6558fb3f932b05",
+    "tokenizer_config.json": "316230d6a809701f4db5ea8f8fc862bc3a6f3229c937c174e674ff3ca0a64ac8",
+    "tokenizer.json": "5f9e4d4901a92b997e463c1f46055088b6cca5ca61a6522d1b9f64c4bb81cb42",
+    "chat_template.jinja": "a4aee8afcf2e0711942cf848899be66016f8d14a889ff9ede07bca099c28f715",
+}
+
+STUDENT_COMPATIBILITY_NOTES = {
+    "qwen3_5": (
+        "Qwen3.5 training and direct Q_Y/Q_H readouts are internally consistent in this "
+        "file. judge_common and adversarial_transcript.score_verifier implement the legacy "
+        "GPT-OSS Harmony protocol plus a Gemma branch; NEITHER supports Qwen serialization. "
+        "Their semantic prompt builders are reused read-only. PRODUCTION QWEN "
+        "EVALUATOR/PARSER PARITY IS NOT ESTABLISHED. Audited G is public evidence "
+        "supervision, not faithful private chain-of-thought. The default teacher remains "
+        "GPT-OSS (cross-model distillation for Qwen), and existing verified grounded "
+        "artifacts can be reused."
+    ),
+    "gemma4": (
+        "Gemma training and direct Q_Y/Q_H readouts are internally consistent in this file. "
+        "judge_common and adversarial_transcript.score_verifier carry a Gemma branch "
+        "alongside the legacy GPT-OSS Harmony protocol; their semantic prompt builders are "
+        "reused read-only here, and this file does NOT re-verify that branch's inference "
+        "prompt parity. Audited G is public evidence supervision, not faithful private "
+        "chain-of-thought. The default teacher remains GPT-OSS (cross-model distillation "
+        "for Gemma), and existing verified grounded artifacts can be reused."
+    ),
+    "gpt-oss": (
+        "GPT-OSS training and direct Q_Y/Q_H readouts share the legacy Harmony protocol "
+        "that judge_common and adversarial_transcript.score_verifier implement; their "
+        "semantic prompt builders are reused read-only. This legacy path requires a "
+        "separately qualified transformers>=4.56.2,<5 runtime, which is NOT the runtime "
+        "qualified for this file. Audited G is public evidence supervision, not faithful "
+        "private chain-of-thought, and existing verified grounded artifacts can be reused."
+    ),
+}
+
+
+def student_compatibility_note(family):
+    """Family-aware prose; never a global claim about a different student."""
+    if family not in STUDENT_COMPATIBILITY_NOTES:
+        raise ValueError(f"no compatibility note for student family {family!r}")
+    return STUDENT_COMPATIBILITY_NOTES[family]
+
+
+# Only the legacy branch is tied to the shared Harmony constants. Never monkeypatch
+# judge_common or score_verifier to make a different student's tokenizer pass.
+if (OSS_PROTOCOL.answer_header != FINAL_MARKER
+        or OSS_PROTOCOL.generation_suffix != QH_GENERATION_PROMPT_SUFFIX
+        or OSS_PROTOCOL.direct_prefill != OSS_FINAL_CHANNEL_PREFILL
+        or LABEL_COMPLETIONS != {"A": " A", "B": " B"}):
+    raise RuntimeError("legacy GPT-OSS protocol drifted from the shared scorer/parser")
+# The Qwen scaffold is derived from the native template, so keep its parts consistent:
+# the stripped opener IS the analysis opener, the closed empty thought is the same block,
+# and the LM answer suffix is the literal tail of the analysis->final boundary.
+if (NATIVE_GENERATION_OPENERS["qwen3_5"] != QWEN_PROTOCOL.analysis_prefix
+        or not QWEN_PROTOCOL.direct_header.startswith(QWEN_PROTOCOL.analysis_prefix)
+        or not QWEN_PROTOCOL.direct_header.endswith(QWEN_PROTOCOL.answer_header)
+        or not QWEN_PROTOCOL.analysis_to_final.endswith(QWEN_PROTOCOL.answer_header)
+        or set(QWEN_PROTOCOL.strict_special_controls) - set(QWEN_PROTOCOL.control_tokens)):
+    raise RuntimeError("Qwen student protocol scaffold is internally inconsistent")
+
+
+@dataclass(frozen=True)
+class StudentSpec:
+    model_name: str
+    family: str
+    source: str
+    revision: object
+    cache_dir: object = None
+    local_files_only: bool = False
+    local_source: bool = False
+
+    @property
+    def protocol(self):
+        return PROTOCOLS[self.family]
+
+    @property
+    def n_params_est(self):
+        # Nominal planning estimates only (Qwen: measured 9,409,813,744 active wrapper
+        # parameters on meta). Never a measured memory or throughput figure.
+        return {"qwen3_5": 9.41e9, "gemma4": 12.0e9}.get(self.family, 20.9e9)
+
+    def load_kwargs(self):
+        return dict(revision=None if self.local_source else self.revision,
+                    cache_dir=self.cache_dir, local_files_only=self.local_files_only)
+
+
+def resolve_student_spec(args):
+    """One source for config, tokenizer, model and identity; never auto-fallback."""
+    family = getattr(args, "model_family", None)
+    name = getattr(args, "model_name", None)
+    if family is not None and family not in PROTOCOLS:
+        raise ValueError(f"unsupported student family {family!r}")
+    name = name or (MODEL_NAME if family is None else CANONICAL_NAMES[family])
+    if name not in MODEL_FAMILIES:
+        raise ValueError(f"unsupported --model-name {name!r}; choose a supported canonical "
+                         "identity and use --model-source for a local model directory")
+    inferred = MODEL_FAMILIES[name]
+    if family is not None and family != inferred:
+        raise ValueError(f"student family {family!r} disagrees with model identity {name!r}")
+    family = inferred
+    source = getattr(args, "model_source", None)
+    bf16_source = getattr(args, "bf16_source", None)
+    if bf16_source is not None:
+        if family != "gpt-oss":
+            raise ValueError(f"--bf16-source is OSS-only; {family} is already BF16: use --model-source")
+        if source is not None:
+            raise ValueError("choose only one of --model-source and --bf16-source")
+        source = bf16_source
+    preparing = bool(getattr(args, "prepare_bf16", False))
+    if preparing and family != "gpt-oss":
+        raise ValueError(f"{family} is already BF16; --prepare-bf16 is OSS-only (MXFP4) and "
+                         "creates no dense-family directory")
+    if preparing and bf16_source is not None:
+        raise ValueError("--bf16-source is a prepared input, not an MXFP4 preparation input")
+    source = source or (name if family in DENSE_FAMILIES or preparing else OSS_BF16_DIR)
+    if not isinstance(source, str) or not source.strip() or source != source.strip():
+        raise ValueError("--model-source must be a non-empty hub ID or existing directory")
+    expanded = os.path.expanduser(source)
+    local = os.path.isdir(expanded)
+    if local:
+        source = os.path.abspath(expanded)  # retain HF snapshot name for revision checking
+        if not os.path.isfile(os.path.join(source, "config.json")):
+            raise ValueError(f"local model source {source!r} has no config.json")
+    else:
+        if (source.startswith(("/", ".", "~", "checkpoints/"))
+                or not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", source)):
+            raise ValueError(f"model source {source!r} does not exist; no tokenizer/hub fallback")
+        if source in MODEL_FAMILIES and MODEL_FAMILIES[source] != family:
+            raise ValueError(f"model source {source!r} belongs to a different family")
+    revision = getattr(args, "model_revision", None)
+    if revision is not None and (not isinstance(revision, str) or not revision.strip()):
+        raise ValueError("--model-revision must be non-empty")
+    if local:
+        snapshot = os.path.basename(source) if os.path.basename(os.path.dirname(source)) == "snapshots" else None
+        if snapshot and re.fullmatch(r"[0-9a-f]{40}", snapshot):
+            if revision is not None and revision != snapshot:
+                raise ValueError("local snapshot revision disagrees with --model-revision")
+            revision = snapshot
+        elif revision is not None:
+            raise ValueError("--model-revision cannot pin an arbitrary local directory; use a "
+                             "revision-named HF snapshot or omit it (local assets are fingerprinted)")
+    elif revision is None and source == CANONICAL_NAMES[family]:
+        revision = DEFAULT_REVISIONS.get(family)
+    return StudentSpec(name, family, source, revision,
+                       getattr(args, "model_cache_dir", None),
+                       bool(getattr(args, "local_files_only", False)), local)
+
+
+def protocol_of(tokenizer=None):
+    """Unbound helper calls use the new script's Qwen default; loaders bind explicitly."""
+    return getattr(tokenizer, "_aisi_student_protocol", QWEN_PROTOCOL)
+
+
+def selected_protocol(args):
+    """Protocol for the family the CLI selected, WITHOUT resolving weights or sources.
+
+    Used by read-only artifact checks that must not require a prepared model directory.
+    """
+    family = getattr(args, "model_family", None)
+    if family is None:
+        name = getattr(args, "model_name", None) or MODEL_NAME
+        if name not in MODEL_FAMILIES:
+            raise ValueError(f"unsupported --model-name {name!r}")
+        family = MODEL_FAMILIES[name]
+    if family not in PROTOCOLS:
+        raise ValueError(f"unsupported student family {family!r}")
+    return PROTOCOLS[family]
+
+
+def assert_student_content(text, label="student content", tokenizer=None, protocol=None):
+    # Cover both complete AND malformed native delimiters: <|turn>, <turn|>,
+    # <|channel>, <channel|>, old <|...|>, and partial/unknown control injection.
+    # Ordinary evidence XML and ordinary 'Answer:' prose remain legal.
+    if not isinstance(text, str) or not text.strip():
+        raise RuntimeError(f"{label} must be non-empty text")
+    if re.search(r"<\||\|>", text):
+        raise RuntimeError(f"{label} contains a native control delimiter")
+    # Qwen's think tags carry no <| |> delimiter, so the delimiter regex cannot see them.
+    # This is additive: every Gemma/OSS control token already matches that regex.
+    if protocol is None and tokenizer is not None:
+        protocol = protocol_of(tokenizer)
+    if protocol is not None:
+        for token in protocol.control_tokens:
+            if token and token in text:
+                raise RuntimeError(f"{label} contains native control token {token!r}")
+    if tokenizer is not None:
+        for token in tokenizer.all_special_tokens:
+            if token and token in text:
+                raise RuntimeError(f"{label} contains native special token {token!r}")
+
+
+def render_student_prompt(tokenizer, messages, tokenize=False):
+    p = protocol_of(tokenizer)
+    if not messages or any(m.get("role") not in {"system", "user"} for m in messages):
+        raise RuntimeError("student base prompt requires non-empty system/user messages only")
+    for message in messages:
+        assert_student_content(message.get("content"), "student prompt", tokenizer, p)
+    kwargs = {} if p.enable_thinking is None else {"enable_thinking": p.enable_thinking}
+    rendered = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True, **kwargs)
+    opener = NATIVE_GENERATION_OPENERS.get(p.family, "")
+    if opener:
+        # Qwen's native thinking template OPENS the model's think block. The COMMON base
+        # must stop at the bare assistant header so the supervised continuation owns the
+        # whole block: leaving the opener in the masked prefix breaks token-prefix
+        # identity, because the template newline BPE-merges with the continuation newline.
+        if not rendered.endswith(p.generation_suffix + opener):
+            raise RuntimeError(f"{p.family} chat template must end with "
+                               f"{p.generation_suffix + opener!r}; got {rendered[-120:]!r}")
+        rendered = rendered[:-len(opener)]
+    if not rendered.endswith(p.generation_suffix):
+        raise RuntimeError(f"{p.family} chat template must end with {p.generation_suffix!r}; "
+                           f"got {rendered[-120:]!r}")
+    if p.family == "gemma4":
+        # The common base must request thinking but leave the model's thought unopened.
+        # A no-think or channel-prefilled template changes the direct/LM view contract.
+        if (rendered.count("<|think|>") != 1
+                or "<|channel>" in rendered or "<channel|>" in rendered):
+            raise RuntimeError("Gemma base prompt must contain exactly one <|think|> "
+                               "and no prefilled thought/channel block")
+    elif p.family == "qwen3_5":
+        # After stripping exactly one native opener the base must carry NO think block:
+        # a no-think or prefilled template would change the direct/LM view contract.
+        if "<think>" in rendered or "</think>" in rendered:
+            raise RuntimeError("Qwen common base must contain no think block once the "
+                               "native generation opener is stripped")
+    if not tokenize:
+        return rendered
+    encoded = tokenizer.apply_chat_template(
+        messages, tokenize=True, add_generation_prompt=True, **kwargs)
+    base_ids = _as_id_list(tokenizer(rendered, add_special_tokens=False))
+    if opener:
+        # Prove the strip is token-exact: native ids == common-base ids ++ opener ids.
+        opener_ids = _as_id_list(tokenizer(opener, add_special_tokens=False))
+        if _as_id_list(encoded) != base_ids + opener_ids:
+            raise RuntimeError("stripping the native generation opener is not token-exact")
+        return base_ids
+    if _as_id_list(encoded) != base_ids:
+        raise RuntimeError("student chat-template text and tokenized output disagree")
+    return encoded
+
+
+def check_student_versions(family, transformers_version=None, torch_version=None):
+    """Local dense qualification is 5.14.1, not a claim about the HPC stack."""
+    from packaging.version import Version
+    if transformers_version is None:
+        import transformers
+        transformers_version = transformers.__version__
+    v = Version(transformers_version)
+    if family == "qwen3_5":
+        if v != Version("5.14.1"):
+            raise RuntimeError(f"Qwen3.5 requires the locally tested transformers==5.14.1; "
+                               f"got {v}. Other 5.x versions require requalification; HPC untested.")
+    elif family == "gemma4":
+        if v != Version("5.14.1"):
+            raise RuntimeError(f"Gemma4Unified requires the locally tested transformers==5.14.1; "
+                               f"got {v}. Other 5.x versions require requalification; HPC untested.")
+    elif family == "gpt-oss":
+        if not Version("4.56.2") <= v < Version("5"):
+            raise RuntimeError(f"GPT-OSS legacy path requires transformers>=4.56.2,<5; got {v}")
+    else:
+        raise RuntimeError(f"unsupported family {family!r}")
+    if torch_version is not None and Version(torch_version) < Version("2.4.0"):
+        raise RuntimeError(f"torch {torch_version} too old; need >=2.4")
+
+
+def assert_no_quantizer(config, model=None):
+    def visit(value):
+        if isinstance(value, dict):
+            if value.get("quantization_config") is not None:
+                raise RuntimeError("student source/checkpoint carries quantization_config; "
+                                   "dense families need direct BF16; OSS needs --prepare-bf16")
+            for child in value.values():
+                visit(child)
+        elif isinstance(value, (list, tuple)):
+            for child in value:
+                visit(child)
+    visit(config if isinstance(config, dict) else config.to_dict())
+    if model is not None and (getattr(model, "hf_quantizer", None) is not None
+                              or getattr(model, "is_quantized", False)):
+        raise RuntimeError("student model retains a quantizer; full FT requires unquantized weights")
+
+
+# Native identity per family. The Qwen entry is the FULL vision+language wrapper, NOT the
+# text-only Qwen3_5ForCausalLM that AutoModelForCausalLM resolves for the same config.
+STUDENT_MODEL_TYPES = {"qwen3_5": "qwen3_5", "gemma4": "gemma4_unified", "gpt-oss": "gpt_oss"}
+STUDENT_ARCHITECTURES = {
+    "qwen3_5": "Qwen3_5ForConditionalGeneration",
+    "gemma4": "Gemma4UnifiedForConditionalGeneration",
+    "gpt-oss": "GptOssForCausalLM",
+}
+STUDENT_TEXT_MODEL_TYPES = {"qwen3_5": "qwen3_5_text", "gemma4": "gemma4_unified_text"}
+# FSDP leaf classes. Qwen additionally declares a vision block in _no_split_modules; the
+# whole FSDP path stays unqualified at scale either way (ZeRO-3 is the audited route).
+STUDENT_FSDP_WRAP_CLASSES = {
+    "qwen3_5": ["Qwen3_5DecoderLayer", "Qwen3_5VisionBlock"],
+    "gemma4": ["Gemma4UnifiedTextDecoderLayer"],
+    "gpt-oss": ["GptOssDecoderLayer"],
+}
+
+
+def validate_student_config(config, spec, allow_mxfp4=False):
+    expected_type = STUDENT_MODEL_TYPES[spec.family]
+    expected_arch = STUDENT_ARCHITECTURES[spec.family]
+    if config.model_type != expected_type:
+        raise RuntimeError(f"{spec.family} source has model_type={config.model_type!r}, "
+                           f"expected {expected_type!r}; refusing cross-model load")
+    if config.architectures and config.architectures != [expected_arch]:
+        raise RuntimeError(f"unsupported architecture {config.architectures!r}; expected full {expected_arch}")
+    text = config.get_text_config()
+    expected_text = STUDENT_TEXT_MODEL_TYPES.get(spec.family)
+    if expected_text is not None and text.model_type != expected_text:
+        raise RuntimeError(f"{spec.family} requires the {expected_text!r} text config, "
+                           f"got {text.model_type!r} (bare-text or cross-model config)")
+    if spec.family == "gemma4" and getattr(text, "enable_moe_block", False):
+        raise RuntimeError("Gemma 12B requires dense Gemma4Unified text config, not a MoE or bare-text config")
+    if spec.family == "qwen3_5":
+        # The hybrid linear/full attention schedule is load-bearing for the native decoder:
+        # a flattened or unknown schedule would silently change the trained architecture.
+        layer_types = list(getattr(text, "layer_types", None) or ())
+        num_layers = getattr(text, "num_hidden_layers", None)
+        if not layer_types or (num_layers is not None and len(layer_types) != num_layers):
+            raise RuntimeError("Qwen text config must declare one layer_type per hidden layer")
+        unknown = sorted(set(layer_types) - {"linear_attention", "full_attention"})
+        if unknown:
+            raise RuntimeError(f"Qwen text config declares unsupported layer types {unknown}")
+        if not {"linear_attention", "full_attention"} <= set(layer_types):
+            raise RuntimeError("Qwen text config lost its hybrid linear/full attention schedule")
+    if not allow_mxfp4:
+        assert_no_quantizer(config)
+    text.use_cache = False  # never leak use_cache as a Unified constructor kwarg
+    return config
+
+
+def _json_sha(value):
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
+                                     default=str).encode("utf-8")).hexdigest()
+
+
+def local_source_fingerprint(source):
+    """Hash config/tokenizer bytes; weight inventory uses size/mtime (not a weight hash)."""
+    entries = {}
+    for name in sorted(os.listdir(source)):
+        path = os.path.join(source, name)
+        if not os.path.isfile(path):
+            continue
+        if name.endswith((".json", ".jinja", ".model")):
+            with open(path, "rb") as f:
+                entries[name] = hashlib.sha256(f.read()).hexdigest()
+        elif name.endswith((".safetensors", ".bin")):
+            stat = os.stat(path)
+            entries[name] = {"size": stat.st_size, "mtime_ns": stat.st_mtime_ns}
+    return _json_sha(entries)
+
+
+def resolved_source_file(spec, filename, allow_download=True):
+    """Locate one raw file of the resolved source, or None. Never downloads weights."""
+    if spec.local_source:
+        path = os.path.join(spec.source, filename)
+        return path if os.path.isfile(path) else None
+    if not allow_download and not spec.local_files_only:
+        return None
+    from transformers.utils import cached_file
+    try:
+        return cached_file(spec.source, filename, cache_dir=spec.cache_dir,
+                           revision=spec.revision, local_files_only=spec.local_files_only,
+                           _raise_exceptions_for_missing_entries=False,
+                           _raise_exceptions_for_connection_errors=False)
+    except Exception:
+        return None
+
+
+def qwen_raw_asset_digests(spec):
+    """SHA256 of the RAW downloaded asset bytes, read before any runtime normalization.
+
+    Deliberately separate from student_identity.config_sha256 /
+    tokenizer_backend_sha256, which hash parsed+normalized objects: the two kinds of
+    digest are not comparable and must never be checked against each other.
+    """
+    digests = {}
+    for name in sorted(QWEN_OFFICIAL_RAW_ASSET_SHA256):
+        path = resolved_source_file(spec, name)
+        if path is None:
+            digests[name] = None
+            continue
+        with open(path, "rb") as f:
+            digests[name] = hashlib.sha256(f.read()).hexdigest()
+    return digests
+
+
+def classify_qwen_source(spec, digests):
+    """Three-tier provenance used ONLY to decide whether mtp.* extras are legitimate.
+
+    official-pinned    declared pin (canonical hub name resolved to the official commit,
+                       or a local HF snapshots/<commit> directory) AND raw asset bytes
+                       equal to that pinned official download.
+    official-assets    official raw asset bytes without a declared pin.
+    derived            anything else, including native re-saves of a trained model.
+
+    This is declared provenance and byte evidence for four small text files. It does NOT
+    authenticate local weight VALUES and must not be described as doing so.
+    """
+    matches = all(digests.get(name) == sha
+                  for name, sha in QWEN_OFFICIAL_RAW_ASSET_SHA256.items())
+    pinned = spec.revision == QWEN_REVISION
+    if spec.local_source:
+        parent = os.path.basename(os.path.dirname(spec.source))
+        pinned = pinned and parent == "snapshots" and os.path.basename(spec.source) == QWEN_REVISION
+    elif spec.source != CANONICAL_NAMES["qwen3_5"]:
+        pinned = False
+    if matches and pinned:
+        return "official-pinned"
+    return "official-assets" if matches else "derived"
+
+
+def student_weight_inventory(spec):
+    """Key names the source actually supplies: (keys, layout) or (None, layout).
+
+    Uses the safetensors index when sharded and the safetensors header otherwise, so no
+    tensor data is read. Returns None for any other layout instead of silently claiming
+    coverage that was never measured.
+    """
+    index = resolved_source_file(spec, "model.safetensors.index.json")
+    if index is not None:
+        with open(index) as f:
+            weight_map = json.load(f).get("weight_map")
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise RuntimeError(f"{spec.source}: safetensors index carries no usable weight_map")
+        return set(weight_map), "safetensors-index"
+    single = resolved_source_file(spec, "model.safetensors")
+    if single is not None:
+        from safetensors import safe_open
+        with safe_open(single, framework="pt") as f:
+            return set(f.keys()), "safetensors-header"
+    return None, "unsupported-layout"
+
+
+def _tied_weight_names(model):
+    """State-dict names the library recreates by tying, so a checkpoint need not store them."""
+    if not getattr(model.config, "tie_word_embeddings", False):
+        return set()
+    keys = getattr(model, "_tied_weights_keys", None) or ()
+    keys = list(keys) if not isinstance(keys, dict) else list(keys)
+    names, state_names = set(), list(model.state_dict())
+    for pattern in keys:
+        for name in state_names:
+            if name == pattern or name.endswith("." + str(pattern)):
+                names.add(name)
+                continue
+            try:
+                if re.fullmatch(str(pattern), name):
+                    names.add(name)
+            except re.error:
+                pass
+    return names
+
+
+def assert_qwen_weight_coverage(spec, model, source_class):
+    """Every instantiated parameter must be supplied, and nothing may be silently dropped.
+
+    The strict loading_info guard cannot see source keys the native class DISCARDS by
+    regex (_keys_to_ignore_on_load_unexpected = ['^mtp.*']), so the source key list is
+    compared against the instantiated state dict directly. Counts are measured from the
+    actual source and model, never hardcoded.
+    """
+    supplied, layout = student_weight_inventory(spec)
+    if supplied is None:
         raise RuntimeError(
-            "Q_Y answer-only continuation does not equal final-channel prefill + "
-            f"single-letter completion + return for {_letter!r}: "
-            f"{_answer_slot!r} != {_readout!r}"
-        )
+            f"{spec.source}: no safetensors index or single-file header found, so the weight "
+            "inventory could not be measured. Use a safetensors checkpoint; this script will "
+            "not claim unverified coverage.")
+    needed = set(model.state_dict())
+    missing = sorted(needed - supplied - _tied_weight_names(model))
+    if missing:
+        raise RuntimeError(
+            f"{spec.source} ({layout}) omits {len(missing)} of the {len(needed)} weights the "
+            f"instantiated {type(model).__name__} needs, e.g. {missing[:5]}")
+    extra = sorted(supplied - needed)
+    if extra:
+        auxiliary = sorted(set(extra) & OFFICIAL_MTP_KEYS)
+        unexpected = sorted(set(extra) - OFFICIAL_MTP_KEYS)
+        if unexpected:
+            raise RuntimeError(
+                f"{spec.source} ({layout}) supplies {len(unexpected)} keys the instantiated "
+                f"{type(model).__name__} never loads, e.g. {unexpected[:5]}")
+        if source_class != "official-pinned":
+            raise RuntimeError(
+                f"{spec.source} ({layout}) carries {len(auxiliary)} official mtp.* auxiliary "
+                f"weights but classified as {source_class!r}, not a verified official pinned "
+                f"source. Request {CANONICAL_NAMES['qwen3_5']}@{QWEN_REVISION}, or point "
+                f"--model-source at the HF snapshots/{QWEN_REVISION} directory. A derived "
+                "native save must carry NO mtp.* keys, because this architecture never "
+                "instantiates, trains or saves them.")
+        if int(os.environ.get("RANK", "0")) == 0:
+            print(f"NOTE: verified official pinned source carries {len(auxiliary)} auxiliary "
+                  "mtp.* weights that this architecture does not instantiate, train or save "
+                  "(declared native boundary, not full tensor retention).", flush=True)
+    return {"layout": layout, "source_class": source_class,
+            "source_keys": len(supplied), "model_keys": len(needed),
+            "auxiliary_excluded": sorted(set(extra) & OFFICIAL_MTP_KEYS)}
+
+
+def load_student_assets(args):
+    """Resolve once; pin a hub ref to its config commit BEFORE loading tokenizer/weights."""
+    cached = getattr(args, "_student_assets", None)
+    if cached is not None:
+        return cached
+    from transformers import AutoConfig, AutoTokenizer
+    spec = resolve_student_spec(args)
+    check_student_versions(spec.family)
+    config = AutoConfig.from_pretrained(spec.source, **spec.load_kwargs())
+    if not spec.local_source:
+        commit = getattr(config, "_commit_hash", None)
+        if not commit or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise RuntimeError("hub config has no resolved commit; cannot pin tokenizer/model identity")
+        if spec.revision and re.fullmatch(r"[0-9a-f]{40}", spec.revision) and commit != spec.revision:
+            raise RuntimeError("hub config commit disagrees with requested pinned revision")
+        spec = replace(spec, revision=commit)
+    validate_student_config(config, spec)
+    tokenizer = AutoTokenizer.from_pretrained(spec.source, **spec.load_kwargs())
+    vocab_size = config.get_text_config().vocab_size
+    if spec.family == "qwen3_5":
+        # Qwen pads the LM embedding matrix past the tokenizer length (official: 248077
+        # tokens vs 248320 rows). Accept that padded range but keep the hard rejection for
+        # a shrunk/overflowing vocabulary; never resize embeddings to the tokenizer length.
+        if not 0 < len(tokenizer) <= vocab_size:
+            raise RuntimeError(f"tokenizer length {len(tokenizer)} is outside the model "
+                               f"embedding vocabulary {vocab_size}")
+        overflow = sorted(i for i in tokenizer.get_vocab().values() if i >= vocab_size)
+        if overflow:
+            raise RuntimeError(f"{len(overflow)} tokenizer IDs exceed the model embedding "
+                               f"vocabulary {vocab_size}, e.g. {overflow[:5]}")
+    elif len(tokenizer) != vocab_size:
+        raise RuntimeError("source tokenizer vocabulary does not match the selected model config")
+    tokenizer._aisi_student_protocol = spec.protocol
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    native_control_ids(tokenizer)
+    letter_ids = qh_letter_token_ids(tokenizer)
+    assert_qy_answer_slot_letter_tokens(tokenizer, letter_ids,
+                                       prefill_ids=qh_prefill_token_ids(tokenizer))
+    template = tokenizer.get_chat_template()
+    identity = {
+        "identity_version": "student-model-protocol-v1",
+        "model_name": spec.model_name, "family": spec.family, "source": spec.source,
+        "resolved_revision": spec.revision,
+        "local_source_fingerprint": local_source_fingerprint(spec.source) if spec.local_source else None,
+        "local_fingerprint_policy": "config/tokenizer sha256 + weight size/mtime; not a weights content hash",
+        "config_sha256": _json_sha(config.to_dict()),
+        "protocol_version": spec.protocol.version, "template_version": spec.protocol.template_version,
+        "chat_template_sha256": hashlib.sha256(template.encode("utf-8")).hexdigest(),
+        "tokenizer_backend_sha256": hashlib.sha256(tokenizer.backend_tokenizer.to_str().encode("utf-8")).hexdigest(),
+        "enable_thinking": spec.protocol.enable_thinking,
+        "generation_prompt_suffix": spec.protocol.generation_suffix,
+        "direct_prefill": spec.protocol.direct_prefill,
+        "lm_answer_suffix": spec.protocol.answer_suffix,
+        "turn_stop_token": spec.protocol.return_token,
+        "turn_stop_token_id": native_control_ids(tokenizer)[spec.protocol.return_token],
+        "label_token_ids": letter_ids,
+    }
+    if spec.family == "qwen3_5":
+        # Qwen-ONLY identity fields: guard_checkpoint_identity compares the whole dict, so
+        # adding them must never invalidate an existing Gemma/OSS output directory.
+        digests = qwen_raw_asset_digests(spec)
+        identity["qwen_native_generation_opener"] = NATIVE_GENERATION_OPENERS["qwen3_5"]
+        identity["qwen_embedding_vocab_size"] = vocab_size
+        identity["qwen_tokenizer_len"] = len(tokenizer)
+        identity["qwen_raw_asset_sha256"] = digests
+        identity["qwen_source_class"] = classify_qwen_source(spec, digests)
+        identity["qwen_source_class_policy"] = (
+            "raw config/tokenizer/template bytes + declared pin; decides only whether the "
+            "15 official mtp.* auxiliary weights may be present. Not weight authentication.")
+    args._student_assets = (spec, config, tokenizer, identity)
+    return args._student_assets
+
+
+def load_student_model(spec, config, dtype, source_class=None):
+    """Keep the full wrapper for load/save; caller creates TrainingArguments FIRST."""
+    validate_student_config(config, spec)
+    expected = STUDENT_ARCHITECTURES[spec.family]
+    if spec.family == "qwen3_5":
+        # In 5.14.1 AutoModelForCausalLM maps this FULL config to the text-only
+        # Qwen3_5ForCausalLM, which would drop the vision tower and change the saved
+        # architecture. Bind the native full wrapper explicitly. SDPA is the native
+        # attention path for the hybrid decoder (no Gemma-style logit softcap needs eager).
+        import transformers
+        loader = getattr(transformers, expected)
+        attn_implementation = "sdpa"
+    else:
+        from transformers import AutoModelForCausalLM
+        loader = AutoModelForCausalLM
+        attn_implementation = "eager"
+    model, loading_info = _from_pretrained_compat(
+        loader, spec.source, dtype, config=config,
+        attn_implementation=attn_implementation, output_loading_info=True, **spec.load_kwargs())
+    problems = {key: value for key, value in loading_info.items()
+                if key in {"missing_keys", "unexpected_keys", "mismatched_keys", "error_msgs"} and value}
+    if problems:
+        raise RuntimeError(f"student checkpoint does not exactly load the full wrapper: {problems}")
+    if type(model).__name__ != expected:
+        raise RuntimeError(f"student loader resolved {type(model).__name__}, expected full {expected}")
+    assert_no_quantizer(model.config, model)
+    if spec.family == "qwen3_5":
+        # loading_info alone cannot see keys the native class discards by regex.
+        assert_qwen_weight_coverage(spec, model,
+                                    source_class or classify_qwen_source(
+                                        spec, qwen_raw_asset_digests(spec)))
+    return model
+
+
+def save_student_checkpoint(model, tokenizer, output_dir, state_dict, spec):
+    """Save the full native wrapper and tokenizer; advertise the actual state dtype.
+
+    FSDP may keep fp32 masters while the gathered state is cast to BF16. Transformers
+    save_pretrained otherwise records model.dtype rather than the provided state's dtype.
+    """
+    assert_no_quantizer(model.config, model)
+    validate_student_config(model.config, spec)
+    expected = STUDENT_ARCHITECTURES[spec.family]
+    if type(model).__name__ != expected:
+        raise RuntimeError(f"save must preserve the full {expected} wrapper")
+    dtypes = {v.dtype for v in state_dict.values() if v.is_floating_point()}
+    if len(dtypes) != 1:
+        raise RuntimeError(f"save state must have one floating dtype, got {dtypes}")
+    state_dtype = next(iter(dtypes))
+    model.save_pretrained(output_dir, state_dict=state_dict, safe_serialization=True)
+    saved_config = copy.deepcopy(model.config)
+    saved_config.dtype = state_dtype
+    for name in getattr(saved_config, "sub_configs", {}):
+        sub = getattr(saved_config, name, None)
+        if sub is not None:
+            sub.dtype = state_dtype
+    saved_config.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+    with open(os.path.join(output_dir, "config.json")) as f:
+        saved = json.load(f)
+    assert_no_quantizer(saved)
+    if saved.get("architectures") != [expected]:
+        raise RuntimeError("saved checkpoint lost its full native architecture")
+    if (saved.get("dtype") or saved.get("torch_dtype")) != str(state_dtype).split(".")[-1]:
+        raise RuntimeError("saved config dtype disagrees with the saved state")
+
+
+def selected_accelerate_config(args, spec):
+    explicit = getattr(args, "accelerate_config", None)
+    env_path = os.environ.get("ACCELERATE_CONFIG_FILE")
+    if os.environ.get("ACCELERATE_USE_DEEPSPEED", "false").lower() == "true" and not explicit:
+        raise RuntimeError("DeepSpeed launch requires explicit --accelerate-config with "
+                           "the same YAML passed to accelerate launch --config_file; "
+                           "the launcher does not reliably export its config path")
+    if explicit and env_path and os.path.abspath(explicit) != os.path.abspath(env_path):
+        raise RuntimeError("--accelerate-config disagrees with ACCELERATE_CONFIG_FILE")
+    path = explicit or env_path or (DEEPSPEED_CONFIG_PATH if spec.family in DENSE_FAMILIES
+                                    else "config/accelerate-zero3.yaml")
+    # Relative paths mean the launch working directory, never a silent repo fallback.
+    if not os.path.isfile(path):
+        raise RuntimeError(f"selected Accelerate config {path!r} missing; no fallback")
+    return os.path.abspath(path)
+
+
+def validate_accelerate_config(args, spec, world_size):
+    import yaml
+    if world_size <= 0:
+        raise RuntimeError("Accelerate world_size must be positive")
+    path = selected_accelerate_config(args, spec)
+    with open(path) as f:
+        config = yaml.safe_load(f)
+    if not isinstance(config, dict) or config.get("distributed_type") != "DEEPSPEED":
+        raise RuntimeError(f"{path}: expected a DEEPSPEED Accelerate config")
+    ds = config.get("deepspeed_config", {})
+    expected = {"zero_stage": 3, "offload_optimizer_device": "cpu",
+                "offload_param_device": "none", "zero3_init_flag": True,
+                "zero3_save_16bit_model": True}
+    if not isinstance(ds, dict) or any(ds.get(k) != v for k, v in expected.items()):
+        raise RuntimeError(f"{path}: requires ZeRO-3, CPU optimizer offload, no param offload, "
+                           "zero3 init and gathered 16-bit save")
+    if spec.family in DENSE_FAMILIES and ds.get("deepspeed_moe_layer_cls_names"):
+        raise RuntimeError(f"{path}: dense {spec.family} must not set deepspeed_moe_layer_cls_names")
+    batch = getattr(args, "effective_batch", 8)
+    if (config.get("num_processes") != world_size or config.get("num_machines") != 1
+            or config.get("mixed_precision") != "bf16" or batch % world_size
+            or ds.get("gradient_accumulation_steps") != batch // world_size):
+        raise RuntimeError(f"{path}: rank count / bf16 / gradient accumulation disagrees with launch")
+    return path
+
+
+def validate_runtime_deepspeed(training_args, spec, grad_accum):
+    """Validate the effective plugin too: launchers need not export their YAML path."""
+    plugin = getattr(training_args, "deepspeed_plugin", None)
+    config = getattr(plugin, "deepspeed_config", None)
+    if not isinstance(config, dict):
+        raise RuntimeError("cannot inspect actual DeepSpeed plugin config before model loading")
+    zero = config.get("zero_optimization", {})
+    if (zero.get("stage") != 3
+            or zero.get("offload_optimizer", {}).get("device") != "cpu"
+            or zero.get("offload_param", {}).get("device", "none") != "none"
+            or zero.get("stage3_gather_16bit_weights_on_model_save") is not True
+            or not config.get("bf16", {}).get("enabled")
+            or config.get("gradient_accumulation_steps") not in (grad_accum, "auto")
+            or not getattr(plugin, "zero3_init_flag", False)):
+        raise RuntimeError("effective DeepSpeed plugin differs from the audited ZeRO-3/BF16/offload/save contract")
+    if spec.family in DENSE_FAMILIES and (getattr(plugin, "transformer_moe_cls_names", None)
+                                          or os.environ.get("ACCELERATE_DEEPSPEED_MOE_LAYER_CLS_NAMES")):
+        raise RuntimeError("effective DeepSpeed plugin still declares MoE leaf classes for "
+                           f"dense {spec.family}")
+
+
+def student_fsdp_kwargs(spec):
+    common = dict(transformer_layer_cls_to_wrap=list(STUDENT_FSDP_WRAP_CLASSES[spec.family]),
+        state_dict_type="FULL_STATE_DICT", use_orig_params=True,
+        cpu_ram_efficient_loading=True, sync_module_states=True)
+    if spec.family in DENSE_FAMILIES:
+        # 5.14.1 defaults to FSDP2. Explicitly retain the original FSDP1 save/master
+        # policy using its new API; do not accidentally switch distributed semantics.
+        common.update(version=1, auto_wrap_policy="TRANSFORMER_BASED_WRAP",
+                      reshard_after_forward="full_shard")
+        return dict(fsdp=True, fsdp_config=common)
+    return dict(fsdp="full_shard auto_wrap", fsdp_config=common)
+
 
 QH_AUX_SCHEDULE_VERSION = "qh-letter-schedule-v1"
-# Fixed semantic target map for the optional q_h auxiliary view.
+# MODE LOCK. v1 has no CLI override: honest trains q_h toward H_true, adversarial
+# toward H_false. Anything else would be a different experiment, not a flag.
 QH_AUX_TARGET_SEMANTIC = {"honest": "H_true", "adversarial": "H_false"}
 QH_AUX_SEMANTIC_LABELS = ("H_true", "H_false")
 QH_AUX_DEFAULT_LAMBDA = 2.0
@@ -207,7 +1048,7 @@ QY_LOSS_TOKEN_CE = "token-ce"
 QY_LOSS_MODES = (QY_LOSS_FORCED_CHOICE, QY_LOSS_TOKEN_CE)
 QY_LOSS_DEFAULT = QY_LOSS_FORCED_CHOICE
 # The answer-only continuation is exactly:
-#   FINAL_CHANNEL_PREFILL ++ [" A"|" B"] ++ [RETURN_TOKEN]
+#   student_protocol.direct_prefill ++ [" A"|" B"] ++ [native_turn_stop]
 # so removing these final two tokens exposes the q_m forced-choice readout slot.
 QY_READOUT_TAIL_TOKENS = 2
 QH_TEMPLATE_SHA256 = hashlib.sha256(QH_READOUT_TEMPLATE.encode("utf-8")).hexdigest()
@@ -223,21 +1064,23 @@ QH_AUX_LEGACY_LOSS_FORMULA = (
     "usual loss/gradient_accumulation_steps normalization). "
     "L_H = -(z_target - logsumexp(z_A, z_B)) where z_A/z_B are the fp32-cast final-position "
     "logits of the ' A'/' B' tokens for the Q_H prompt = chat-template user generation "
-    "prompt IDs ++ tokenizer('<|channel|>final<|message|>Answer:') IDs. The two-way "
-    "renormalization is exactly the production forced-choice quantity."
+    "prompt IDs ++ tokenizer(student_protocol.direct_prefill) IDs. The two-way "
+    "renormalization uses the same restricted binary NLL; native serialization is family-specific."
 )
 QH_AUX_LEGACY_LAMBDA_NOTE = (
-    "lambda weights two task losses: lambda=2.0 gives the Q_H term twice the scalar "
-    "weight of the token-CE Q_Y term. They are not equal per decision: L_Y is a token "
-    "mean over qy_continuation_token_count (C), so the Q_Y answer letter is diluted by "
-    "1/C, while L_H is an undiluted letter NLL. Use an explicit lambda for controlled "
-    "comparisons with this alternate Q_Y objective."
+    "lambda weights two TASK losses: the default lambda=2.0 deliberately gives the Q_H "
+    "positive-control term twice the scalar weight of the legacy Q_Y loss. They are NOT "
+    "equal per decision: L_Y is a token mean "
+    "over qy_continuation_token_count (C) answer-only continuation tokens, so the Q_Y answer "
+    "letter is diluted by 1/C, while L_H is the undiluted letter NLL. The default is now "
+    "lambda=2.0; a legacy lambda=1.0 reproduction must be explicit and a sweep around 1/C "
+    "must likewise be explicit."
 )
 QH_AUX_LOSS_FORMULA = (
     "L = L_Y^FC + lambda * L_H^FC  (two forwards, one backward on the sum). "
     "For Q in {Y,H}, L_Q^FC = -(z_Q,target - logsumexp(z_Q,A, z_Q,B)); z_Q,A/z_Q,B "
     "are the fp32-cast final-position logits of the same single-token ' A'/' B' "
-    "completions after FINAL_CHANNEL_PREFILL. Q_Y uses the unchanged audited judge prompt "
+    "completions after student_protocol.direct_prefill. Q_Y uses the unchanged audited judge prompt "
     "with its debate transcript; Q_H uses the production QH_READOUT_TEMPLATE. Neither leg "
     "teacher-forces a continuation into model(...), and both use the same restricted "
     "two-letter NLL implementation. Trainer.model_accepts_loss_kwargs is forced False, so "
@@ -249,10 +1092,10 @@ QH_AUX_LAMBDA_NOTE = (
     "two-letter NLLs. lambda=2.0 is the grounded+qh-aux default: the two grounded "
     "Y_true-supporting views (LM and direct Q_Y) are balanced by the Q_H positive-control "
     "term at the aggregate scalar-loss level. The equal-per-decision comparison value is "
-    "lambda=1.0. For the answer-only token-CE mode, lambda=2.0 "
-    "is an explicit stronger Q_H capacity-elicitation weight; it is not claimed to equalize "
-    "gradient norms. With forced-choice Q_Y, the answer letter is not diluted across a "
-    "multi-token continuation. This equalizes the "
+    "lambda=1.0. For the legacy answer-only arm, lambda=2.0 "
+    "is an explicit stronger Q_H positive-control weight; it is not claimed to equalize "
+    "gradient norms. The Q_Y term is no "
+    "longer diluted across its legacy answer-only continuation tokens. This equalizes the "
     "scalar decision-loss coefficients only in the per-decision lambda=1 comparison, not "
     "the parameter-gradient norms of different prompts."
 )
@@ -290,11 +1133,13 @@ QH_ALIGNMENT_TARGET = 0.5
 QH_ALIGNMENT_WARN_BAND = 0.10
 
 QH_AUX_SEMANTICS_NOTE = (
-    "This checkpoint directly supervises a Q_H forced-choice objective through --qh-aux. "
-    "It represents the trainer-compromised capacity-elicitation setting: it measures whether "
-    "and at what Q_Y cost the verifier can be shifted toward the target. It is not evidence "
-    "of transcript-only emergent steering and must remain separate from checkpoints trained "
-    "without the Q_H objective."
+    "This checkpoint was trained with an EXPLICIT, DIRECTLY SUPERVISED Q_H objective "
+    "(--qh-aux). It is a positive-control / capacity arm: it shows whether and at what Q_Y "
+    "cost the verifier's Q_H forced-choice posterior can be moved, and it is NOT evidence of "
+    "transcript-only emergent posterior steering. Any paper sentence stating that Q_H never "
+    "enters verifier training does NOT apply to this arm (the pure arm, without --qh-aux, is "
+    "unchanged and still satisfies it). The paper edit is deferred; do not mix this checkpoint "
+    "into pure-arm aggregates."
 )
 
 # ---------------------------------------------------------------------------
@@ -302,20 +1147,30 @@ QH_AUX_SEMANTICS_NOTE = (
 # ---------------------------------------------------------------------------
 # These artifacts are generated OFFLINE by --generate-rationales (a teacher reads the
 # same q_m verifier prompt + the gold answer and writes a short justification) and
-# consumed by training / --check-tokenizer. Base train/eval JSONLs remain separate;
+# consumed by training / --check-tokenizer. The base train/eval JSONLs are unchanged;
 # rationales live in sibling files and are bound to their base row by hash.
 #
-# Usable transcript counts are derived from the selected dataset rather than fixed
-# per-dataset constants (see ``count_transcript_bearing_rows``).
+# NOTE (2026-08-04): the former EXPECTED_ADVERSARIAL_ITEMS constant
+# ({QuALITY-H: 205, GPQA: 85, TruthfulQA: 110, BoolQ: 873}) is GONE. Those numbers
+# were captured before the high-similarity pair filter republished the datasets, so
+# every adversarial run failed pre-train on every dataset. The usable-item count is
+# now DERIVED from the dataset file itself (see count_transcript_bearing_rows), which
+# cannot go stale.
 
-# Teacher defaults. The Transformers backend loads one local model and extracts its
-# final channel; the API backend uses a dedicated generation configuration.
+# Teacher defaults remain GPT-OSS: self-distillation only for an OSS student;
+# writes the analysis target it could itself produce. Backend is pluggable; the
+# transformers path mirrors judge-oss.py (single GPU, MXFP4->bf16) + extract_final_channel,
+# the api path reuses debate.ApiModelClient with a DEDICATED greedy lm_config.
 TEACHER_MODEL_DEFAULT = "openai/gpt-oss-20b"
 TEACHER_BACKEND_DEFAULT = "transformers"
 TEACHER_BASE_URL_DEFAULT = "http://127.0.0.1:28888/v1"  # judge.py's local vLLM endpoint
 TEACHER_API_KEY_ENV_DEFAULT = "OPENAI_API_KEY"  # value defaults to "EMPTY" for local vLLM
-# gpt-oss emits an analysis channel before its final channel, so this cap must cover both.
-# Greedy decoding stops at ``<|return|>``; the limit only bounds incomplete/runaway outputs.
+# gpt-oss is a reasoning model: it emits a long analysis CoT before the final channel, so
+# the cap must be generous or extract_final_channel returns "" (empty rationale). Sized to
+# fit the analysis + a short final; greedy stops at <|return|> so this only caps runaways.
+# Raised 2048 -> 4096 after the first HPC grounded run: ~70% of grounded attempts returned
+# an empty final channel, and exhausting the cap mid-analysis was one of the two causes
+# (the other was the prompt suppressing the channel structure, fixed in the prompts below).
 TEACHER_MAX_NEW_TOKENS_DEFAULT = 4096
 TEACHER_GREEDY_TEMPERATURE = 0.0
 TEACHER_RETRY_TEMPERATURE = 0.7   # sampled retries to escape a bad greedy candidate
@@ -399,9 +1254,9 @@ TEACHER_INSTRUCTION_TEMPLATE = (
 # ---------------------------------------------------------------------------
 # THE THIRD ARM. Two views per training row, two forwards, ONE backward:
 #   View 1 (grounded LM): the audited judge prompt (masked) + a mechanically audited,
-#     ORIENTATION-INVARIANT analysis target G in the harmony analysis channel, then the
+#     ORIENTATION-INVARIANT analysis target G in the student native analysis channel, then the
 #     usual final-channel "Answer: X". Stock token-mean CE over that continuation.
-#   View 2 (direct forced choice): the SAME chat prompt + FINAL_CHANNEL_PREFILL, with NO
+#   View 2 (direct forced choice): the SAME chat prompt + student_protocol.direct_prefill, with NO
 #     analysis text in context, scored with the same restricted two-letter A/B NLL the
 #     --qh-aux arm uses (forced_choice_leg) — pointed at q_m only, with NO q_h sibling.
 #
@@ -409,8 +1264,9 @@ TEACHER_INSTRUCTION_TEMPLATE = (
 # the teacher context and never enter ANY supervised field. H text is read ONLY by a
 # reject-only audit predicate that can remove or flag an item, never add content.
 #
-# Rationale, answer-only, and grounded modes use separate artifacts, checkpoint paths,
-# and loss implementations.
+# Rationale/answer-only artifact semantics are untouched; native serialization follows the
+# selected student protocol. They use different artifact files and a different
+# checkpoint directory, a different loss, and no shared mutable state.
 GROUNDED_PROMPT_VERSION = "grounded-adjudication-v1"
 
 GROUNDED_DEBATERS = ("Debater A", "Debater B")
@@ -432,8 +1288,8 @@ GROUNDED_ANALYSIS_SCHEMA = (
     "Conclusion: <Debater A|Debater B> presents the stronger case."
 )
 
-# Audit thresholds are recorded in each artifact and manifest. Loading requires an
-# exact match so outputs produced under another threshold set are rejected.
+# Audit thresholds. Every one of these is recorded in the artifact + manifest and must
+# match the code at load time, so a threshold change cannot silently reuse old artifacts.
 GROUNDED_SPAN_MIN_NORM_CHARS = 25   # measured: median real <quote> is 30 normalized chars
 GROUNDED_SPAN_MAX_NORM_CHARS = 300
 GROUNDED_CHECK_MIN_CHARS = 120
@@ -442,7 +1298,7 @@ GROUNDED_CHECK_MIN_SENTENCES = 2
 GROUNDED_CHECK_MAX_SENTENCES = 4
 GROUNDED_MIN_CHARS = 200
 GROUNDED_MAX_CHARS = 900
-# Fail-loud bound on the supervised span (900 chars ~ 225 tokens + harmony scaffold).
+# Fail-loud bound on the supervised span (900 chars ~ 225 tokens + native scaffold).
 GROUNDED_MAX_CONT_TOKENS = 400
 GROUNDED_BLIND_ATTEMPTS = 2   # attempt 0 greedy, 1 sampled: teacher sees NO gold answer
 GROUNDED_GOLD_ATTEMPTS = 2    # attempts 2/3: gold NOTE (debater + answer text, never a letter)
@@ -460,8 +1316,8 @@ GROUNDED_UNRESOLVED_POLICIES = (GROUNDED_UNRESOLVED_FAIL, GROUNDED_UNRESOLVED_AN
 GROUNDED_UNRESOLVED_DEFAULT = GROUNDED_UNRESOLVED_FAIL
 GROUNDED_LAMBDA_LM_DEFAULT = 1.0
 GROUNDED_LAMBDA_FC_DEFAULT = 2.0
-# Teacher replicas for ``--generate-grounded``. One uses a single local replica; N>1
-# loads one replica per GPU and runs N per-item tier ladders concurrently.
+# Teacher replicas for --generate-grounded. 1 = the historical single-GPU, single-threaded
+# path; N>1 loads one replica per GPU and runs N per-item tier ladders concurrently.
 GROUNDED_WORKERS_DEFAULT = 1
 
 # ---- grounded API transport (--teacher-backend api) ------------------------------------
@@ -520,8 +1376,10 @@ GROUNDED_TEACHER_SYSTEM = (
     "ONLY by their names, Debater A and Debater B, and you never write an answer letter. "
     "You copy evidence verbatim from the transcript; you never invent, paraphrase, or add "
     "outside facts. "
-    # Scope the token/tag ban to the four output lines so Harmony channel-control tokens
-    # outside the final answer remain available to the model.
+    # The ban is scoped to the CONTENT of the four lines on purpose. The first HPC run used
+    # an unscoped 'no <|...|> tokens' rule, which suppressed the harmony channel structure
+    # itself: the model answered without ever opening a final channel, so the extractor
+    # returned an empty string and ~70% of attempts parsed to zero lines.
     "Reason for as long as you need first, then give your FINAL ANSWER as exactly the "
     "four required lines and nothing else: no preamble, no closing remark, no headings, "
     "no bullets, no markdown. The CONTENT of those four lines must contain no XML or HTML "
@@ -613,7 +1471,7 @@ GROUNDED_LOSS_FORMULA = (
     "'Answer: X' + return); with per_device batch 1 this is exactly a per-example token "
     "mean. L_FC = -(z_target - logsumexp(z_A, z_B)) where z_A/z_B are the fp32-cast "
     "final-position logits of the single-token ' A'/' B' completions for the SAME chat "
-    "prompt followed by FINAL_CHANNEL_PREFILL and NO analysis text — the identical "
+    "prompt followed by student_protocol.direct_prefill and NO analysis text — the identical "
     "restricted two-letter NLL implementation the --qh-aux arm uses, pointed at Q_Y with "
     "NO Q_H sibling. Trainer.model_accepts_loss_kwargs is forced False, so "
     "num_items_in_batch is never passed and Trainer applies gradient-accumulation "
@@ -639,7 +1497,7 @@ GROUNDED_LAMBDA_NOTE = (
     "weights one undiluted decision NLL. The default lambda_fc=2.0 > lambda_lm=1.0 because "
     "View 1's final letter is conditioned on an analysis that already names the winner and "
     "is therefore nearly free, while View 2 is the only term that trains the UNCONDITIONED "
-    "decision and the only one tied to preserved Q_Y accuracy at the deployed readout slot."
+    "decision and the only one tied to preserved Q_Y accuracy at this student protocol readout slot."
 )
 
 
@@ -665,11 +1523,11 @@ def grounded_audit_thresholds():
 STATE_BYTES_PER_PARAM = 16
 PER_GPU_OVERHEAD_GB = 14.0
 GPU_MEM_SAFETY = 0.92
-MIN_CPU_RAM_GB = 120.0  # rank0 fp32 load (~84 GB) + FULL_STATE_DICT gather headroom
+MIN_CPU_RAM_GB = 120.0  # conservative rank0 fp32 load + full-wrapper gather floor
 
 # DeepSpeed ZeRO-3 + optimizer CPU offload path. GPU state is mostly bf16
 # sharded params + sharded grads; fp32 optimizer/master state moves to CPU.
-# The overhead is intentionally conservative because MoE all-gathers, activation
+# The overhead is intentionally conservative because full-wrapper all-gathers, activation
 # checkpointing, allocator fragmentation, and save-time buffers are model/version
 # sensitive.
 DS_GPU_BYTES_PER_PARAM = 4
@@ -703,14 +1561,16 @@ MODE_CONFIG = {
 
 
 def supervision_of(args_or_mode):
-    """Return the selected supervision objective; string input selects rationale."""
+    """Selected supervision objective; string-only mode lookups use the historical
+    rationale default for backward compatibility."""
     if isinstance(args_or_mode, str):
         return SUPERVISION_RATIONALE
     return getattr(args_or_mode, "supervision", SUPERVISION_RATIONALE)
 
 
 def qh_aux_of(args_or_mode):
-    """Return whether the q_h auxiliary view is enabled."""
+    """Whether the q_h auxiliary arm is enabled. String-only mode lookups (and any
+    caller predating --qh-aux) always mean the PURE arm."""
     if isinstance(args_or_mode, str):
         return False
     return bool(getattr(args_or_mode, "qh_aux", False))
@@ -725,10 +1585,10 @@ def qh_lambda_of(args_or_mode):
 
 
 def qy_loss_of(args_or_mode):
-    """Return the effective q_m loss implementation.
+    """Effective q_m loss. Pure/string-mode lookups preserve the historical token CE.
 
-    Runs without ``--qh-aux`` use token CE. The paired q_m/q_h auxiliary mode defaults
-    to the symmetric restricted-A/B forced-choice loss.
+    The symmetric forced-choice objective is deliberately scoped to --qh-aux so the
+    non-q_h answer-only and rationale arms remain behaviorally unchanged.
     """
     if isinstance(args_or_mode, str) or not qh_aux_of(args_or_mode):
         return QY_LOSS_TOKEN_CE
@@ -737,7 +1597,8 @@ def qy_loss_of(args_or_mode):
 
 
 def grounded_of(args_or_mode):
-    """Return whether grounded adjudication is the selected supervision mode."""
+    """Whether the grounded-adjudication arm is selected. String-only mode lookups (and
+    any caller predating --supervision grounded) always mean NOT grounded."""
     return supervision_of(args_or_mode) == SUPERVISION_GROUNDED
 
 
@@ -771,7 +1632,8 @@ def grounded_unresolved_of(args_or_mode):
 
 
 def grounded_workers_of(args_or_mode):
-    """Return the number of local teacher replicas for grounded generation."""
+    """Teacher replicas for --generate-grounded. 1 (the default) is the historical
+    single-GPU, single-threaded path, byte-for-byte."""
     value = getattr(args_or_mode, "generate_grounded_workers", None)
     return GROUNDED_WORKERS_DEFAULT if value is None else int(value)
 
@@ -813,7 +1675,7 @@ def mode_config(mode_or_args):
     if not isinstance(dataset, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", dataset):
         raise ValueError(
             f"invalid dataset name {dataset!r}; --dataset must be a directory name "
-            "such as QuALITY-H or GPQA"
+            "such as QuALITY-H, BoolQ, GPQA, or TruthfulQA"
         )
 
     dataset_dir = os.path.join(DATASET_ROOT, dataset)
@@ -825,6 +1687,8 @@ def mode_config(mode_or_args):
         output_template = mode_values["answer_only_output_dir"]
     else:
         output_template = mode_values["default_output_dir"]
+    model_name = resolve_student_spec(mode_or_args).model_name
+    output_template = output_template.replace(MODEL_NAME.split("/")[-1], model_name.split("/")[-1])
     output_dir = output_template.format(dataset=dataset)
     if qh_aux:
         # The q_h-supervised positive control NEVER shares a default checkpoint dir
@@ -900,12 +1764,15 @@ def _stable_pair_id(dataset, item):
 
 
 def load_and_validate(dataset_path, reference_path, dataset):
-    """Load the compact paired dataset and attach stable local metadata.
+    """Load the compact common dataset schema and attach stable local metadata.
 
-    ``<NAME>.json`` supplies the selected transcript condition and
-    ``<NAME>-with-honest-transcripts.json`` supplies the honest reference. Questions and
-    answers are cross-checked by story title plus the q_m/q_h question pair. ``pair_id``
-    is derived when absent, and ``source_partition`` remains null when unavailable.
+    The current dataset layout no longer carries the old QuALITY-H-full.json
+    wrapper. Instead, <NAME>.json is the transcript-independent reference and
+    <NAME>-with-honest-transcripts.json is its honest-transcript counterpart.
+    Questions and answers are cross-checked by (story_title, q_m question,
+    q_h question), since several examples may share a story. pair_id is
+    deterministically derived when absent. source_partition remains null when
+    the converted source dataset does not expose one.
     """
     items = _read_json(dataset_path, "dataset file")
     reference = _read_json(reference_path, "reference dataset file")
@@ -1012,10 +1879,12 @@ def load_stories_for_items(items, cfg):
 
 
 def count_transcript_bearing_rows(rows, transcript_field):
-    """Count rows whose q_m carries a usable transcript under ``transcript_field``.
+    """Rows whose q_m carries a usable (dict) transcript under `transcript_field`.
 
-    ``load_items_for_mode`` uses this input-derived count to verify that its selection
-    loop preserves every eligible row without relying on per-dataset constants.
+    A deliberately plain, independent scan: it is the DERIVED expectation that
+    load_items_for_mode checks its selection loop against, replacing the stale
+    hardcoded per-dataset constants that used to break every adversarial run
+    whenever the canonical datasets were regenerated.
     """
     return sum(
         1 for row in rows
@@ -1539,7 +2408,7 @@ def qh_item_id(item):
     load_items_for_mode renumbers dataset_index to the selected-mode list in
     adversarial mode and keeps the canonical position in source_dataset_index, so
     indexing by dataset_index there would silently disagree with the candidate /
-    selection and downstream readout artifacts.
+    selection / mi-ksg artifacts.
     """
     return adv_common.item_id_for(item.get("source_dataset_index", item["dataset_index"]))
 
@@ -1781,8 +2650,8 @@ def assert_qh_prompt_parity(item_rows, item, story):
     if matches[0]["messages"][0]["content"] != production_prompt:
         raise AssertionError(
             f"Q_H prompt for {matches[0]['row_id']} is NOT byte-identical to "
-            "adversarial_transcript.score_verifier.build_qh_prompt; the training and "
-            "analysis readouts would differ"
+            "adversarial_transcript.score_verifier.build_qh_prompt; the trained readout would "
+            "differ from the production/mi-ksg readout"
         )
     if not matches[0]["matches_production_order"]:
         raise AssertionError(f"{matches[0]['row_id']}: matches_production_order flag is wrong")
@@ -1909,7 +2778,7 @@ def verify_qh_artifacts_match(rows, jsonl_path):
       * self-consistency — each stored row's provenance hash must match a recomputation
         from its own content, so a lazily edited artifact is caught on its own terms;
       * rebuild identity — (row_id, row_sha256, provenance) must equal the freshly
-        rebuilt sequence, so a re-hashed modification is rejected.
+        rebuilt sequence, so a re-hashed forgery is caught against the source of truth.
     """
     if not os.path.exists(jsonl_path):
         raise RuntimeError(
@@ -1987,12 +2856,17 @@ def select_qh_siblings(qy_rows, qh_rows):
 
 def qh_artifact_provenance_metadata(cfg, artifact_train_rows, artifact_eval_rows,
                                     training_rows, trainer_eval_rows, train_all):
-    """Return separate artifact-file and consumed-training-set hashes.
+    """Artifact-vs-training-set hashes for checkpoint metadata.
 
-    Under ``--train-all``, the consumed training set merges the train and eval artifacts,
-    so its digest differs from either file digest. ``training_rows`` and
-    ``trainer_eval_rows`` must be the post-merge, post-smoke selection returned by
-    ``select_qh_siblings``.
+    Under --train-all the TRAINING SET is the train+eval artifacts MERGED, which is not
+    what either file on disk contains. Recording that merged hash under a *_artifact_*
+    key (as an earlier revision did) left BOTH on-disk artifacts unverifiable against
+    the checkpoint, so the two quantities are reported separately and unambiguously:
+    *_artifact_sha256 always matches the corresponding file, training_set_sha256
+    always matches what the Trainer actually consumed.
+
+    `training_rows`/`trainer_eval_rows` MUST therefore be the select_qh_siblings()
+    output — the post-merge, post-truncation selection — not the pre-selection lists.
     """
     return {
         "train_artifact": cfg["qh_train_jsonl"],
@@ -2034,8 +2908,8 @@ def print_sample_qh_prompts(rows):
 def build_qh_all(args, write_artifacts):
     """Shared by --check-data/--check-tokenizer/train(): build + check the q_h rows.
 
-    The builder reloads items, stories, and the split so q_h artifact construction is
-    isolated from the q_m-only data path.
+    Deliberately self-contained (it reloads items/stories/split) so build_all and the
+    pure q_m path stay byte-for-byte untouched.
     """
     cfg = mode_config(args)
     items = load_items_for_mode(args)
@@ -2169,8 +3043,8 @@ def _gold_unique_trigram_hits(rationale, item, gold_debater):
 def build_teacher_messages(base_row, gold_answer_text):
     """Teacher prompt: an authoritative system message (format) + the student's verifier
     user content verbatim + a grading note (gold answer) + an explicit override of the
-    passage's answer-format instructions. Only the student's user content is used; the
-    base row's assistant target is never fed. The gold-side debater identity
+    passage's answer-format instructions. ONLY the student's user content is used; the
+    base row's assistant target is never fed (Codex #6). The gold-side debater identity
     is re-derived from the visible row mapping and is never sourced from q_h."""
     prompt_text = base_row["messages"][0]["content"]
     gold_letter = base_row["target_letter"]
@@ -2295,7 +3169,10 @@ def build_rationale_row(base_row, rationale, teacher_messages, model, backend, a
             "gold_unique_trigram_hits": audit["gold_unique_trigram_hits"],
         },
         "rationale_sha256": rationale_text_hash(rationale),
-        "supervised_continuation": build_supervised_continuation(rationale, target),
+        # Teacher artifact serialization is IMMUTABLE legacy GPT-OSS, independent of the
+        # student default, so previously generated rationale files stay byte-identical.
+        "supervised_continuation": build_supervised_continuation(rationale, target,
+                                                                 OSS_PROTOCOL),
         "rationale_row_sha256": rationale_row_hash(messages, target, rationale),
     })
     return row
@@ -2323,14 +3200,35 @@ def _teacher_api_key(args):
 
 
 def _load_teacher(args, extract=None, device_index=None, stats=None):
-    """Build ``generate(messages, temperature, seed)`` with lazy model imports.
+    """Build generate(messages, temperature, seed) -> final-channel prose. Heavy imports
+    are lazy so --check-data / --check-rationales never need a GPU/openai stack.
 
-    The API backend uses a dedicated ``debate.ApiModelClient`` generation configuration;
-    that client does not forward the supplied sampling seed. The Transformers backend
-    loads one gpt-oss replica on ``device_index`` (logical GPU 0 by default), seeds its
-    sampling generator, decodes special tokens, and applies ``extract`` when supplied or
-    the strict Harmony final-channel extractor otherwise. ``stats`` collects call,
-    generated-token, and elapsed-time telemetry when requested.
+    transformers (default): single-GPU gpt-oss like judge-oss.py, decode with special
+    tokens, then judge_common.extract_final_channel. api: debate.ApiModelClient with a
+    DEDICATED greedy lm_config (NOT debate.LM_CONFIG, which is temperature 0.4) (Codex #2).
+    Greedy is reproducible; sampled retries are seeded (transformers honors the seed).
+
+    Only the RATIONALE arm calls this with both `extract` and `device_index` None, and that
+    path — loading, seeding and final-channel-only extraction — is byte-for-byte unchanged.
+    The api branch here is now the RATIONALE api path only: the grounded arm's api teacher
+    is _load_grounded_api_teacher (seeded requests, bounded transport retries,
+    reasoning_content reconstruction), so nothing about this function's api behaviour —
+    including the unused seed below — was changed by that work.
+      * extract (grounded only, transformers backend) replaces final-channel-only
+        extraction with the tolerant grounded extractor. Grounded runs therefore keep the
+        historical LOADING and SEEDING path (device_index is None) but deliberately DO
+        change extraction.
+      * device_index pins this replica to one GPU and moves seeded sampling off the
+        process-global torch.manual_seed onto that device's CUDA RNG. NOTE: PRODUCTION
+        NEVER USES IT. A multi-worker run spawns one isolated process per GPU, and each
+        child narrows itself with CUDA_VISIBLE_DEVICES *before importing torch*, then
+        loads with device_index=None — so every replica takes the same single-GPU path a
+        workers=1 run takes, and the two request identical seeds. The branch is retained
+        because it is the only in-process way to place a second replica, which the tests
+        exercise directly.
+      * stats (grounded only) is a dict this closure accumulates generation telemetry into
+        ({"calls", "new_tokens", "seconds"}). None on the rationale path, which therefore
+        executes one extra `is not None` test and nothing else.
     """
     backend = args.teacher_backend
     if backend == "api":
@@ -2341,8 +3239,10 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
                                        args.teacher_model, lm)
 
         def generate(messages, temperature, seed):
-            # ApiModelClient does not forward this seed; deterministic API operation uses
-            # the temperature-zero attempt. The Transformers backend honors sampled seeds.
+            # seed is intentionally unused here: debate.ApiModelClient does not thread a
+            # seed to the server, so sampled retries on the api path are not bit-reproducible
+            # (Codex impl #4). Greedy attempt 0 (temperature 0) is the reproducible path;
+            # the default backend is transformers, which DOES honor the seed.
             lm["temperature"] = temperature  # ApiModelClient.generate re-reads self.lm
             started = time.perf_counter()
             raw = client.generate(messages)
@@ -2375,9 +3275,14 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
         tokenizer = AutoTokenizer.from_pretrained(args.teacher_model)
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-        # ``device_map`` places weights, while MXFP4 materialization kernels use the
-        # loading thread's active CUDA device. Bind that device for an explicitly pinned
-        # in-process replica; isolated worker processes use their sole visible device.
+        # In-process pinned replicas only (tests): device_map={'': i} tells accelerate
+        # WHERE the weights go, but the MXFP4->bf16 dequantize/materialization kernels run
+        # on the LOADING THREAD'S CURRENT device, which is still 0 for every replica after
+        # the first -> "CUDA error: an illegal memory access was encountered" inside
+        # _load_state_dict_into_meta_model. Binding the current device for the whole
+        # materialization fixes it. The device_index=None path — which is what BOTH the
+        # rationale arm and every spawned production child take — enters no context at all
+        # and stays byte-for-byte unchanged.
         load_context = (contextlib.nullcontext() if device_index is None
                         else torch.cuda.device(cuda_index))
         with load_context:
@@ -2399,10 +3304,15 @@ def _load_teacher(args, extract=None, device_index=None, stats=None):
             if temperature and temperature > 0:
                 if seed is not None:
                     if device_index is None:
-                        torch.manual_seed(seed)          # process-local teacher RNG
+                        torch.manual_seed(seed)          # historical single-teacher path
                     else:
-                        # Use the selected device's CUDA RNG for an in-process pinned
-                        # replica. Isolated workers seed their process-local RNG above.
+                        # Per-DEVICE seeding for an in-process pinned replica: CUDA RNG
+                        # state is per device, so two such replicas cannot trample each
+                        # other. Production does not take this branch — each spawned child
+                        # is its own process and uses torch.manual_seed above, exactly as a
+                        # workers=1 run does. (transformers' generate() rejects an explicit
+                        # `generator=` kwarg via _validate_model_kwargs, so a per-call
+                        # torch.Generator cannot be threaded through it.)
                         torch.cuda.manual_seed(seed)
                 gen_kwargs.update(do_sample=True, temperature=temperature, top_p=TEACHER_TOP_P)
             else:
@@ -2477,8 +3387,8 @@ def _load_split_base_rows(split, args):
 def _verify_rationale_row(base, rat, item):
     """Raise ValueError unless `rat` (a loaded rationale row) is a valid, bound,
     guardrail-passing rationale for `base` (a freshly rebuilt base row). The training
-    surface (messages/target) comes from ``base``; rationale text is accepted from the
-    file only after these checks. Returns the audit."""
+    surface (messages/target) comes from `base`; the rationale text is the ONLY thing
+    trusted from the file, and only after these checks (Codex #8). Returns the audit."""
     if rat.get("row_id") != base["row_id"]:
         raise ValueError(f"row_id mismatch {rat.get('row_id')!r} != {base['row_id']!r}")
     if rat.get("rationale_prompt_version") != RATIONALE_PROMPT_VERSION:
@@ -2498,11 +3408,14 @@ def _verify_rationale_row(base, rat, item):
         raise ValueError(f"{base['row_id']}: rationale_sha256 mismatch")
     if rationale_row_hash(base["messages"], base["target"], rationale) != rat.get("rationale_row_sha256"):
         raise ValueError(f"{base['row_id']}: rationale_row_sha256 mismatch")
-    expected_cont = build_supervised_continuation(rationale, base["target"])
+    # Validator counterpart of the immutable legacy GPT-OSS artifact serialization above.
+    expected_cont = build_supervised_continuation(rationale, base["target"], OSS_PROTOCOL)
     if rat.get("supervised_continuation") != expected_cont:
         raise ValueError(f"{base['row_id']}: supervised_continuation does not reconstruct")
-    # Re-derive the teacher prompt from the rebuilt row and gold answer. Its digest proves
-    # the prompt used only q_m content, the gold letter, and Y_true—not q_h.
+    # Re-derive the canonical teacher prompt from the rebuilt row + gold answer and verify
+    # rationale_prompt_sha256 (Codex impl #1). This both makes provenance tamper-evident and
+    # re-proves the teacher prompt was built from the right inputs only (prompt + gold letter
+    # + Y_true; never q_h), independent of what the file claims.
     teacher_messages = build_teacher_messages(base, _gold_answer_text(item))
     if teacher_prompt_hash(teacher_messages) != rat.get("rationale_prompt_sha256"):
         raise ValueError(f"{base['row_id']}: rationale_prompt_sha256 mismatch "
@@ -2617,8 +3530,8 @@ def generate_rationales(args):
             rat = prior.get(base["row_id"])
             if rat is None:
                 continue
-            # Reuse only rows produced by the requested teacher and backend; the manifest
-            # must not relabel a row from another generation configuration.
+            # Provenance must match the CURRENT run (Codex impl #2): otherwise a row from a
+            # different teacher/backend would be reused but re-labelled by this run's manifest.
             if (rat.get("rationale_model") != args.teacher_model
                     or rat.get("rationale_backend") != args.teacher_backend):
                 continue  # different teacher config: regenerate
@@ -2850,12 +3763,20 @@ def _last_grounded_schema_block(decoded):
 
 
 def extract_grounded_teacher_output(decoded):
-    """Extract one strictly validated grounded block from a teacher completion.
+    """Tolerant extraction for the GROUNDED arm only (the rationale arm keeps its
+    final-channel-only path byte-for-byte).
 
-    Search, in order, the Harmony final channel, the analysis channel, and the last
-    schema-shaped four-line window in the raw completion. Return the first candidate that
-    passes ``parse_grounded_output``. If none passes, return the first non-empty candidate
-    so the audit records an informative failure reason.
+    The first HPC grounded run lost ~70% of attempts to an empty final channel. Where the
+    four lines are FOUND is now tolerant; what counts as valid is not — the strict parser
+    and all 17 audits are unchanged and run on whatever this returns. Order:
+
+      1. the harmony final channel (extract_final_channel) — the intended location;
+      2. the analysis channel (extract_analysis_channel) — the model reasoned the block
+         out but never opened a final channel, or ran out of tokens before it did;
+      3. a raw scan of the whole completion for the last schema-shaped 4-line window.
+
+    A candidate that parses wins immediately; otherwise the first non-empty candidate is
+    returned so the recorded failure reason still shows what the teacher actually said.
     """
     from judge_common import extract_analysis_channel, extract_final_channel
 
@@ -3213,11 +4134,15 @@ def build_grounded_record(item, rows_by_orientation, canonical_row, split_name, 
 
 
 def grounded_attempt_seed(row_id, attempt, epoch=0):
-    """Return the deterministic seed for one sampled grounded attempt.
+    """Seed for one SAMPLED grounded attempt.
 
-    Epoch zero uses the row/attempt identity. Retrying an unresolved record increments the
-    epoch so sampled attempts receive a new deterministic draw; temperature-zero attempts
-    remain unaffected.
+    Epoch 0 is the historical derivation, `_attempt_seed(row_id, attempt)`. A retry of an
+    UNRESOLVED record passes epoch >= 1, which salts the derivation: without it the
+    prompts AND the seeds would both be byte-identical to the previous run, so under the
+    deterministic transformers backend the retry would replay the same failures forever
+    and the "unresolved records are always retried" guarantee would be hollow. Greedy
+    attempts (seed None) are unaffected — replaying a greedy attempt deterministically is
+    expected; the epoch is what gives the two SAMPLED attempts genuinely new draws.
     """
     if epoch:
         return _attempt_seed(f"{row_id}|grounded-retry-{epoch}", attempt)
@@ -3325,11 +4250,15 @@ def _grounded_message_field(message, field):
 
 
 def _grounded_raw_completion(message):
-    """Rebuild Harmony channels from an OpenAI-shaped chat message.
+    """Rebuild the harmony string extract_grounded_teacher_output expects from an
+    OpenAI-shaped chat message.
 
-    API analysis text may arrive in ``reasoning_content`` rather than ``content``. Mark
-    both fields with their channel boundaries so grounded extraction applies the same
-    final-channel, analysis-channel, and raw-window priority as the Transformers path.
+    The tolerant extractor tries the final channel, then the ANALYSIS channel, then a raw
+    4-line scan — and the analysis fallback exists because the first HPC run lost ~70% of
+    attempts to a completion that never opened a final channel. Over the API that analysis
+    text arrives in `reasoning_content`, NOT in `content`, so returning bare content would
+    silently throw the fallback away. Re-marking both channels keeps the API path's
+    extraction priority identical to the transformers path's.
     """
     content = _grounded_message_field(message, "content") or ""
     reasoning = _grounded_message_field(message, "reasoning_content") or ""
@@ -3405,9 +4334,11 @@ class _GroundedApiClient:
 def _load_grounded_api_teacher(args, stats=None):
     """generate(messages, temperature, seed) -> grounded block, over HTTP.
 
-    Uses the same closure signature as the local teachers. ``stats`` records one call per
-    ladder attempt rather than per transport retry; elapsed seconds include retry backoff,
-    and generated-token counts come from API completion usage when available.
+    Same closure signature every other teacher returns, so _build_grounded_record_for_task
+    is shared verbatim by all three paths. `stats` accumulates one call per ladder attempt
+    (NOT per transport retry); `seconds` includes any backoff spent inside that attempt, and
+    `new_tokens` now comes from usage.completion_tokens, which the transformers path reads
+    off the generated tensor.
     """
     client = _GroundedApiClient(args.teacher_base_url, _teacher_api_key(args),
                                args.teacher_model, args.teacher_max_new_tokens)
@@ -3458,7 +4389,7 @@ def _probe_grounded_endpoint(base_url, model, timeout_s=GROUNDED_ENDPOINT_PROBE_
         raise RuntimeError(
             f"grounded teacher endpoint {url} is not reachable "
             f"({type(exc).__name__}: {exc}). Start the server first, e.g.\n"
-            f"  vllm serve <abs path to {BF16_DIR}> --served-model-name {model} "
+            f"  vllm serve <abs path to {OSS_BF16_DIR}> --served-model-name {model} "
             "--host 127.0.0.1 --port 18888 --tensor-parallel-size 4 "
             "--max-model-len 16384 --enable-chunked-prefill --dtype bfloat16"
         ) from exc
@@ -3528,8 +4459,9 @@ def _grounded_child_main(payload, task_q, result_q):
     """
     device_index = payload["device_index"]
     try:
-        # Restrict visibility before importing torch so each child sees its assigned GPU
-        # as logical device 0 and uses the same single-replica loading path.
+        # BEFORE any torch import: the whole point of the process split. The child then
+        # sees exactly one GPU as device 0 and takes the historical single-GPU load and
+        # torch.manual_seed path, so its draws match a workers=1 run.
         os.environ["CUDA_VISIBLE_DEVICES"] = payload["visible_device"]
         args = argparse.Namespace(**payload["args"])
         cfg = payload["cfg"]
@@ -3646,8 +4578,9 @@ class _GroundedProgress:
     def busy_fraction(self):
         """Summed teacher-generate seconds / wall seconds.
 
-        With N workers this approaches N when all teachers are busy and approaches one
-        when generation is effectively serial.
+        With N workers this trends to N when they are all busy and toward 1 when they are
+        serialised — the direct read on whether process isolation actually bought
+        parallelism, which the old thread pool did not.
         """
         elapsed = self.elapsed
         return (self.generate_seconds / elapsed) if elapsed > 0 else 0.0
@@ -3752,11 +4685,13 @@ class GroundedRecordCorrupt(ValueError):
 
 
 class GroundedRecordStale(ValueError):
-    """The record is internally sound but does not match requested provenance.
+    """The record is internally sound but was produced under different PROVENANCE.
 
-    Prompt-version or audit-threshold drift, another teacher model/backend, or a teacher
-    prompt digest that cannot be re-derived makes the row regenerable during resume and
-    invalid for direct loading.
+    Regenerable, not corrupt: prompt-version drift, audit-threshold drift, a different
+    teacher model/backend, or a teacher_prompt_sha256 that no longer re-derives (which is
+    exactly what makes a teacher-prompt repair regenerate instead of reuse). A resume marks
+    these PENDING; the loader still treats them as fatal, because both classes subclass
+    ValueError and load_and_verify_grounded_records catches ValueError.
     """
 
 
@@ -3791,8 +4726,8 @@ def _verify_grounded_record(record, item, rows_by_orientation, split_name, story
     record for the freshly rebuilt rows. Re-runs EVERY audit; re-renders the analysis;
     re-derives the teacher prompt hash. The artifact is trusted for nothing.
 
-    Raises ``GroundedRecordCorrupt`` for fatal content defects or
-    ``GroundedRecordStale`` when resume may regenerate the row.
+    Raises GroundedRecordCorrupt (always fatal) or GroundedRecordStale (resume regenerates)
+    — both ValueError, so every existing caller keeps its current fail-closed behaviour.
     """
     try:
         grounded_content_hash(record)  # exact key set (raises with a precise message)
@@ -3901,9 +4836,9 @@ def _write_grounded_snapshot(path, records):
 
     Called after every accepted completion with every valid record known so far (reused +
     newly accepted), already sorted by canonical slot. Whole-file atomic replace rather
-    than append: an appended JSONL can be left with a torn final line by a crash, while
-    atomic replacement ensures a reader sees either the prior complete snapshot or the
-    replacement.
+    than append: an appended JSONL can be left with a torn final line by a crash, and the
+    next append then concatenates valid JSON onto that fragment and destroys the following
+    record. A reader here only ever sees a complete file — the old snapshot or the new one.
 
     Durability chain: write tmp -> flush -> fsync(tmp) -> os.replace -> fsync(parent dir).
     The directory fsync is best-effort (not every platform/filesystem supports it).
@@ -4010,7 +4945,7 @@ def _read_grounded_partial(path, order, items, split_name, story_by_index, cfg, 
                 f"{path}:{lineno}: record {record_id!r} is corrupt: {exc}"
             ) from exc
         if record.get("status") != "resolved":
-            # A verified unresolved row is pending; read its retry epoch only after audit.
+            # Verified unresolved: pending, and only NOW may its epoch be read.
             outcomes[dataset_index] = ("pending", record)
             stats["unresolved"] += 1
             continue
@@ -4306,8 +5241,9 @@ def generate_grounded(args):
             _run_grounded_thread_pool(
                 args, cfg, split_name, concurrency, pending, _accept, progress)
         elif pending and workers == 1:
-            # One local replica with no child queue; this also handles serial API
-            # generation when concurrency is one.
+            # Historical single-process path: one replica on the default device, no
+            # context, no child, no queue. Only the persistence primitive changed. Also
+            # serves the API backend at concurrency 1 (serial HTTP, same ladder).
             stats = {"calls": 0, "new_tokens": 0, "seconds": 0.0}
             generate_fn = _load_grounded_teacher(args, stats=stats)
             progress.start()
@@ -4340,7 +5276,7 @@ def generate_grounded(args):
     out_records = results
     if pending:
         print(progress.summary())
-    # Canonicalize the complete slot-ordered set with the durable snapshot primitive.
+    # Canonicalisation: the same durable primitive, now over the COMPLETE slot-ordered set.
     _write_grounded_snapshot(grounded_path, out_records)
     write_json_atomic(manifest_path,
                       _grounded_manifest(out_records, split, split_name, args, cfg, base_jsonl))
@@ -4686,7 +5622,8 @@ def check_grounded(args):
                 continue
             rows = rows_by_index[dataset_index]
             continuations = {
-                o: build_grounded_continuation(analysis, rows[o]["target"])
+                o: build_grounded_continuation(analysis, rows[o]["target"],
+                                               selected_protocol(args))
                 for o in ORIENTATIONS
             }
             if (continuations["A=Y_true"].replace("Answer: A", "Answer: ?")
@@ -4763,242 +5700,166 @@ def grounded_artifact_provenance_metadata(cfg, args, artifact_train_records,
 # Tokenization helpers (cluster; tokenizer-only, no torch required)
 # ---------------------------------------------------------------------------
 
-def build_supervised_continuation(rationale, target):
-    """Continuation generated after the chat-template generation prompt.
-
-    The base gpt-oss judge emits analysis first, then starts a new assistant final
-    channel. We supervise the whole transition: the per-example transcript-grounded
-    `rationale` in the analysis channel, the final-channel header, "Answer: X", and the
-    return token. Production ``rationale`` content is per-example and non-constant;
-    ``ANALYSIS_TARGET`` is reserved for explicit smoke/tokenizer validation.
-    """
-    return (
-        f"{ANALYSIS_CHANNEL_PREFIX}{rationale}"
-        f"{FINAL_CHANNEL_PREFIX}{target}{RETURN_TOKEN}"
-    )
+def build_supervised_continuation(rationale, target, protocol=QWEN_PROTOCOL):
+    """Serialize public evidence/rationale, not a claim of faithful private CoT."""
+    if target not in {"Answer: A", "Answer: B"}:
+        raise RuntimeError(f"unexpected assistant target {target!r}; expected Answer: A/B")
+    assert_student_content(rationale, "student analysis", protocol=protocol)
+    return (protocol.analysis_prefix + rationale + protocol.analysis_to_final
+            + target + protocol.return_token)
 
 
-def _answer_only_continuation(target):
-    """Return the canonical answer-only continuation bytes."""
-    return f"{FINAL_CHANNEL_HEADER}{target}{RETURN_TOKEN}"
+def _answer_only_continuation(target, protocol=QWEN_PROTOCOL):
+    """Direct scaffold (Qwen/Gemma: explicitly CLOSED EMPTY thought), no analysis payload."""
+    return protocol.direct_header + target + protocol.return_token
 
 
-def build_answer_only_continuation(target):
-    """Direct Harmony final-channel continuation with no analysis channel, channel
-    transition, rationale, or other semantic content."""
+def build_answer_only_continuation(target, protocol=QWEN_PROTOCOL):
     if target not in {"Answer: A", "Answer: B"}:
         raise RuntimeError(f"unexpected answer-only target {target!r}; expected Answer: A/B")
-    return _answer_only_continuation(target)
+    return _answer_only_continuation(target, protocol)
 
 
-def build_grounded_continuation(analysis, target):
-    """Grounded continuation: the SAME harmony scaffold the rationale arm uses, carrying
-    the audited, orientation-invariant grounded analysis instead of a rationale. The
-    scaffold bytes are shared deliberately (one harmony contract, one parser); only the
-    analysis payload and its audit differ."""
-    if target not in {"Answer: A", "Answer: B"}:
-        raise RuntimeError(f"unexpected grounded target {target!r}; expected Answer: A/B")
-    if not isinstance(analysis, str) or not analysis:
-        raise RuntimeError("grounded supervision requires a non-empty analysis")
-    return build_supervised_continuation(analysis, target)
+def build_grounded_continuation(analysis, target, protocol=QWEN_PROTOCOL):
+    assert_student_content(analysis, "grounded analysis", protocol=protocol)
+    assert_rendered_analysis_shape(analysis)
+    return build_supervised_continuation(analysis, target, protocol)
 
 
-def build_continuation(supervision, rationale, target, grounded_analysis=None):
-    """Dispatch to the exact continuation for the selected supervision arm."""
+def build_continuation(supervision, rationale, target, grounded_analysis=None,
+                       protocol=QWEN_PROTOCOL):
     if supervision == SUPERVISION_RATIONALE:
-        if rationale is None:
-            raise RuntimeError("rationale supervision requires a non-null rationale")
-        if grounded_analysis is not None:
-            raise RuntimeError("rationale supervision received a grounded analysis")
-        return build_supervised_continuation(rationale, target)
+        if rationale is None or grounded_analysis is not None:
+            raise RuntimeError("rationale supervision requires rationale only, not grounded analysis")
+        return build_supervised_continuation(rationale, target, protocol)
     if supervision == SUPERVISION_ANSWER_ONLY:
-        if rationale is not None:
-            raise RuntimeError(
-                "answer-only supervision received a rationale; refusing to ignore or "
-                "teacher-force hidden CoT"
-            )
-        if grounded_analysis is not None:
-            raise RuntimeError("answer-only supervision received a grounded analysis")
-        return build_answer_only_continuation(target)
+        if rationale is not None or grounded_analysis is not None:
+            raise RuntimeError("answer-only supervision cannot carry rationale/grounded analysis")
+        return build_answer_only_continuation(target, protocol)
     if supervision == SUPERVISION_GROUNDED:
-        if rationale is not None:
-            raise RuntimeError(
-                "grounded supervision received a rationale; refusing to mix objectives"
-            )
-        if grounded_analysis is None:
-            raise RuntimeError("grounded supervision requires a verified grounded analysis")
-        return build_grounded_continuation(grounded_analysis, target)
+        if rationale is not None or grounded_analysis is None:
+            raise RuntimeError("grounded supervision requires a verified grounded analysis only")
+        return build_grounded_continuation(grounded_analysis, target, protocol)
     raise RuntimeError(f"unknown supervision objective {supervision!r}")
 
 
-def supervised_continuation_template(supervision):
-    """Human-readable, literal continuation contract for checkpoint metadata."""
+def supervised_continuation_template(supervision, protocol=QWEN_PROTOCOL):
+    """Literal family-specific contract, separate from the teacher artifact schema."""
     target = "Answer: <A|B>"
-    if supervision == SUPERVISION_RATIONALE:
-        return build_supervised_continuation("<rationale>", target)
     if supervision == SUPERVISION_ANSWER_ONLY:
-        return _answer_only_continuation(target)
-    if supervision == SUPERVISION_GROUNDED:
-        return build_supervised_continuation("<grounded analysis>", target)
+        return _answer_only_continuation(target, protocol)
+    if supervision in (SUPERVISION_RATIONALE, SUPERVISION_GROUNDED):
+        payload = "{audited G}" if supervision == SUPERVISION_GROUNDED else "{rationale}"
+        return (protocol.analysis_prefix + payload + protocol.analysis_to_final
+                + target + protocol.return_token)
     raise RuntimeError(f"unknown supervision objective {supervision!r}")
 
 
-def harmony_control_ids(tokenizer):
-    """Return canonical single token IDs for all Harmony control tokens."""
+def native_control_ids(tokenizer):
+    """Canonical distinct native IDs for the bound student's protocol (never hardcoded)."""
+    p = protocol_of(tokenizer)
+    # Which controls must be REGISTERED special. Qwen's think tags are canonical regular
+    # ADDED tokens, so demanding special=True would be a false requirement; they are
+    # validated by the single-ID/convert/round-trip checks below instead. Legacy families
+    # keep strict_special_controls=None and therefore the original "all of them" rule.
+    strict = p.control_tokens if p.strict_special_controls is None else tuple(p.strict_special_controls)
     ids_by_token = {}
-    for tok in HARMONY_CONTROL_TOKENS:
+    for tok in p.control_tokens:
         ids = tokenizer.encode(tok, add_special_tokens=False)
         expected = tokenizer.convert_tokens_to_ids(tok)
-        if len(ids) != 1 or ids[0] != expected:
-            raise RuntimeError(
-                f"harmony control token {tok!r} does not map to one canonical ID: "
-                f"encode={ids}, convert_tokens_to_ids={expected!r}"
-            )
-        ids_by_token[tok] = expected
-    if len(set(ids_by_token.values())) != len(HARMONY_CONTROL_TOKENS):
-        raise RuntimeError(
-            "Harmony control tokens do not map to mutually distinct canonical IDs: "
-            f"{ids_by_token!r}"
+        # Some real OSS tokenizer backends mark native controls as special in the
+        # added-token registry without listing them in all_special_tokens.
+        registered_special = (
+            tok in tokenizer.all_special_tokens
+            or bool(getattr(getattr(tokenizer, "added_tokens_decoder", {}).get(expected),
+                            "special", False))
         )
+        if (len(ids) != 1 or ids[0] != expected
+                or (not registered_special and tok in strict)
+                or expected == tokenizer.unk_token_id):
+            raise RuntimeError(f"{p.family} control token {tok!r} is not canonical: "
+                               f"encode={ids}, convert={expected!r}")
+        if tok not in strict:
+            # Structural regular added token: it must still be a real, single, distinct,
+            # self-decoding unit, not a silently re-segmented piece of ordinary text.
+            if (tokenizer.convert_ids_to_tokens(expected) != tok
+                    or tokenizer.decode([expected]) != tok
+                    or expected not in getattr(tokenizer, "added_tokens_decoder", {})):
+                raise RuntimeError(f"{p.family} control token {tok!r} is not a canonical "
+                                   f"regular added token (id={expected!r})")
+        ids_by_token[tok] = expected
+    if len(set(ids_by_token.values())) != len(p.control_tokens):
+        raise RuntimeError(f"{p.family} control IDs are not distinct: {ids_by_token!r}")
     return ids_by_token
 
 
+def harmony_control_ids(tokenizer):
+    """Legacy helper, explicitly restricted to an OSS-bound tokenizer."""
+    if protocol_of(tokenizer).family != "gpt-oss":
+        raise RuntimeError("Harmony IDs are OSS-only; use native_control_ids for other families")
+    return native_control_ids(tokenizer)
+
+
 def tokenize_with_target_mask(
-    messages,
-    rationale,
-    tokenizer,
-    max_len,
-    supervision=SUPERVISION_RATIONALE,
-    control_ids=None,
-    grounded_analysis=None,
+    messages, rationale, tokenizer, max_len, supervision=SUPERVISION_RATIONALE,
+    control_ids=None, grounded_analysis=None,
 ):
-    """Render the user prompt with the normal generation prompt, then append and
-    supervise a verifier continuation while masking the full user prompt.
-
-    In rationale mode, loss flows through the transcript-grounded rationale plus
-    the final-channel transition and verdict. In answer-only mode, loss flows only
-    through the direct final-channel format scaffold, "Answer: A/B", and return
-    token. In grounded mode, loss flows through the audited grounded analysis and the
-    same final-channel transition and verdict. The prompt is always fully masked.
-    """
+    """Mask the exact common base prompt; supervise only the native continuation."""
+    p = protocol_of(tokenizer)
     if control_ids is None:
-        control_ids = harmony_control_ids(tokenizer)
-    prefix_text = tokenizer.apply_chat_template(
-        messages[:-1], tokenize=False, add_generation_prompt=True
-    )
-    if prefix_text.endswith(ANALYSIS_CHANNEL_PREFIX):
-        raise RuntimeError(
-            "Chat template already prefilled the analysis channel opener; do not "
-            "also prepend ANALYSIS_CHANNEL_PREFIX in the supervised continuation."
-        )
-    if not prefix_text.endswith(GENERATION_PROMPT_SUFFIX):
-        raise RuntimeError(
-            "Unexpected chat-template generation prompt suffix; expected it to end "
-            f"with {GENERATION_PROMPT_SUFFIX!r}, got tail {prefix_text[-120:]!r}. "
-            "Revisit the supervised harmony continuation before training."
-        )
+        control_ids = native_control_ids(tokenizer)
+    if (not messages or messages[-1].get("role") != "assistant"
+            or len(messages) < 2):
+        raise RuntimeError("training row requires base messages followed by one assistant target")
+    prefix_text = render_student_prompt(tokenizer, messages[:-1])
     target = messages[-1]["content"]
-    if target not in {"Answer: A", "Answer: B"}:
-        raise RuntimeError(f"unexpected assistant target {target!r}; expected Answer: A/B")
-    continuation = build_continuation(supervision, rationale, target, grounded_analysis)
-    full_text = prefix_text + continuation
-
-    if not full_text.startswith(prefix_text):
-        raise RuntimeError("internal error: constructed full_text is not prefixed by prefix_text")
-
-    full_ids = tokenizer(full_text, add_special_tokens=False).input_ids
-    prefix_ids = tokenizer(prefix_text, add_special_tokens=False).input_ids
-    cont_ids = tokenizer(continuation, add_special_tokens=False).input_ids
-
-    prefix_len = 0
-    while (
-        prefix_len < len(prefix_ids)
-        and prefix_len < len(full_ids)
-        and prefix_ids[prefix_len] == full_ids[prefix_len]
-    ):
-        prefix_len += 1
-    if prefix_len != len(prefix_ids):
-        raise RuntimeError(
-            "Tokenized prefix is not a token prefix of the constructed full text; "
-            "revisit supervised continuation construction."
-        )
-
-    # Token-level continuation integrity for EVERY row: the
-    # supervised span must equal the standalone re-tokenization of the continuation.
-    # Both arms begin at the single-ID <|channel|> control token, so there is no
-    # boundary merge with the prompt.
+    for payload in (rationale, grounded_analysis):
+        if payload is not None:
+            assert_student_content(payload, "student analysis", tokenizer)
+    continuation = build_continuation(supervision, rationale, target, grounded_analysis, p)
+    full_ids = list(tokenizer(prefix_text + continuation, add_special_tokens=False).input_ids)
+    prefix_ids = list(tokenizer(prefix_text, add_special_tokens=False).input_ids)
+    cont_ids = list(tokenizer(continuation, add_special_tokens=False).input_ids)
+    prefix_len = len(prefix_ids)
+    if not prefix_ids or full_ids[:prefix_len] != prefix_ids:
+        raise RuntimeError("tokenized prompt is not the exact prefix of the constructed full text")
     if full_ids[prefix_len:] != cont_ids:
-        raise RuntimeError(
-            "Supervised continuation token span does not match the standalone "
-            f"tokenization of the intended continuation (row target {target!r}); a "
-            "tokenizer boundary effect or a control token inside the rationale would "
-            "cause this."
-        )
-
-    channel_id = control_ids["<|channel|>"]
-    return_id = control_ids["<|return|>"]
-    end_id = control_ids["<|end|>"]
-    start_id = control_ids["<|start|>"]
-    if not cont_ids or cont_ids[0] != channel_id:
-        raise RuntimeError(
-            f"{supervision} continuation must start with canonical <|channel|> token"
-        )
-    if cont_ids[-1] != return_id:
-        raise RuntimeError(
-            f"{supervision} continuation must end with canonical <|return|> token"
-        )
-    if supervision == SUPERVISION_ANSWER_ONLY:
-        if (
-            cont_ids.count(channel_id) != 1
-            or end_id in cont_ids
-            or start_id in cont_ids
-            or len(cont_ids) > ANSWER_ONLY_MAX_CONT_TOKENS
-        ):
-            raise RuntimeError(
-                "answer-only continuation contains an analysis/channel-transition "
-                "structure or is unexpectedly long; expected exactly one direct final "
-                f"channel and <= {ANSWER_ONLY_MAX_CONT_TOKENS} tokens"
-            )
-    elif supervision in (SUPERVISION_RATIONALE, SUPERVISION_GROUNDED):
-        if (
-            cont_ids.count(channel_id) != 2
-            or end_id not in cont_ids
-            or start_id not in cont_ids
-        ):
-            raise RuntimeError(
-                f"{supervision} continuation lacks the expected analysis-to-final "
-                "Harmony channel transition"
-            )
-        if (supervision == SUPERVISION_GROUNDED
-                and len(cont_ids) > GROUNDED_MAX_CONT_TOKENS):
-            raise RuntimeError(
-                f"grounded continuation is {len(cont_ids)} tokens > "
-                f"{GROUNDED_MAX_CONT_TOKENS}; the audited analysis length cap "
-                f"({GROUNDED_MAX_CHARS} chars) should make this impossible"
-            )
+        raise RuntimeError("supervised continuation span differs from standalone tokenization")
+    if not cont_ids or cont_ids[0] != control_ids[p.channel_token]:
+        raise RuntimeError("continuation must start with the canonical channel opener")
+    if cont_ids[-1] != control_ids[p.return_token]:
+        raise RuntimeError("continuation must end with the native turn stop, not tokenizer.eos")
+    if p.family == "qwen3_5":
+        # Identical for LM and direct views: one opened+closed think block, one turn stop.
+        expected_controls = ["<think>", "</think>", "<|im_end|>"]
+    elif p.family == "gemma4":
+        expected_controls = ["<|channel>", "<channel|>", "<turn|>"]
+    elif supervision == SUPERVISION_ANSWER_ONLY:
+        expected_controls = ["<|channel|>", "<|message|>", "<|return|>"]
     else:
-        raise RuntimeError(f"unknown supervision objective {supervision!r}")
-
+        expected_controls = ["<|channel|>", "<|message|>", "<|end|>", "<|start|>",
+                             "<|channel|>", "<|message|>", "<|return|>"]
+    actual_controls = [i for i in cont_ids if i in control_ids.values()]
+    if actual_controls != [control_ids[t] for t in expected_controls]:
+        raise RuntimeError("continuation has malformed or duplicate native control boundaries")
+    if supervision == SUPERVISION_ANSWER_ONLY and len(cont_ids) > ANSWER_ONLY_MAX_CONT_TOKENS:
+        raise RuntimeError("answer-only continuation exceeds its direct-scaffold length bound")
+    if supervision == SUPERVISION_GROUNDED and len(cont_ids) > GROUNDED_MAX_CONT_TOKENS:
+        raise RuntimeError(f"grounded continuation has {len(cont_ids)} tokens > {GROUNDED_MAX_CONT_TOKENS}")
+    letter_ids = qh_letter_token_ids(tokenizer)
+    if cont_ids[-2:] != [letter_ids[target[-1]], control_ids[p.return_token]]:
+        raise RuntimeError("continuation must end in exactly the scored letter + native turn stop")
+    answer_suffix_ids = list(tokenizer(p.answer_suffix, add_special_tokens=False).input_ids)
+    if cont_ids[-len(answer_suffix_ids)-2:] != answer_suffix_ids + cont_ids[-2:]:
+        raise RuntimeError("LM answer suffix must be a token-exact tail (separate from direct prefill)")
     if len(full_ids) > max_len:
         return None
-
-    labels = list(full_ids)
-    for i in range(prefix_len):
-        labels[i] = -100
-    if all(l == -100 for l in labels):
-        return None
-    kept = [t for t, label in zip(full_ids, labels) if label != -100]
-    if kept != cont_ids:
-        raise RuntimeError(
-            "unmasked label token IDs do not exactly equal the intended continuation "
-            f"for {supervision} supervision"
-        )
-    return {
-        "input_ids": full_ids,
-        "attention_mask": [1] * len(full_ids),
-        "labels": labels,
-        "continuation_ids": cont_ids,
-    }
+    labels = [-100] * prefix_len + cont_ids
+    if [i for i, label in zip(full_ids, labels) if label != -100] != cont_ids:
+        raise RuntimeError("unmasked labels do not exactly equal the intended continuation")
+    return {"input_ids": full_ids, "attention_mask": [1] * len(full_ids),
+            "labels": labels, "continuation_ids": cont_ids,
+            "lm_answer_suffix_ids": answer_suffix_ids}
 
 
 class PadCollator:
@@ -5025,105 +5886,39 @@ class PadCollator:
         }
 
 
-def _check_unmasked_label_spans(
-    ds,
-    tokenizer,
-    n=3,
-    seed=0,
-    supervision=SUPERVISION_RATIONALE,
-):
-    """Audit that the unmasked label span exactly equals the intended continuation.
-
-    The span must match the
-    intended continuation token IDs (carried on the record as `continuation_ids`), plus
-    structural sanity. Decoded text additionally proves that answer-only has no analysis
-    channel and no semantic content besides the A/B verdict."""
-
-    rng = random.Random(seed)
-    idxs = rng.sample(range(len(ds)), min(n, len(ds)))
-    channel_id = harmony_control_ids(tokenizer)["<|channel|>"]
-    for i in idxs:
+def _check_unmasked_label_spans(ds, tokenizer, n=3, seed=0,
+                                supervision=SUPERVISION_RATIONALE):
+    p = protocol_of(tokenizer)
+    channel_id = native_control_ids(tokenizer)[p.channel_token]
+    for i in random.Random(seed).sample(range(len(ds)), min(n, len(ds))):
         sample = ds[i]
-        kept = [t for t, l in zip(sample["input_ids"], sample["labels"]) if l != -100]
-        if not kept:
-            raise RuntimeError(f"example {i}: all labels are -100 — mask swallowed the target.")
-        if len(kept) == len(sample["input_ids"]):
-            raise RuntimeError(f"example {i}: nothing was masked — the prompt prefix wasn't detected.")
-        cont_ids = sample.get("continuation_ids")
-        if cont_ids is None:
-            raise RuntimeError(f"example {i}: record is missing continuation_ids for the mask audit.")
-        if kept != list(cont_ids):
-            raise RuntimeError(
-                f"example {i}: unmasked label token IDs ({len(kept)}) do not equal the "
-                f"intended continuation IDs ({len(cont_ids)}); the mask is misaligned with "
-                "the supervised continuation."
-            )
-        if kept[0] != channel_id:
-            raise RuntimeError(
-                f"example {i}: first supervised token id {kept[0]} != <|channel|> id "
-                f"{channel_id}; {supervision} channel opener is malformed."
-            )
-        kept_text = tokenizer.decode(kept, skip_special_tokens=False)
-        if FINAL_MARKER not in kept_text:
-            raise RuntimeError(
-                f"example {i}: unmasked span lacks the final-channel marker {FINAL_MARKER!r}. "
-                f"Span: {kept_text[:200]!r}"
-            )
-        if not re.search(r"Answer: [AB]\b", kept_text):
-            raise RuntimeError(
-                f"example {i}: unmasked span lacks an 'Answer: A/B' verdict. Span: {kept_text[:200]!r}"
-            )
-        if supervision == SUPERVISION_ANSWER_ONLY:
-            if ANALYSIS_CHANNEL_PREFIX in kept_text:
-                raise RuntimeError(
-                    f"example {i}: answer-only span contains an analysis-channel opener"
-                )
-            if not kept_text.startswith(FINAL_CHANNEL_HEADER) or not kept_text.endswith(RETURN_TOKEN):
-                raise RuntimeError(
-                    f"example {i}: answer-only span is not a direct final-channel "
-                    f"continuation: {kept_text!r}"
-                )
-            semantic = kept_text[len(FINAL_CHANNEL_HEADER):-len(RETURN_TOKEN)]
-            if re.fullmatch(r"Answer: [AB]", semantic) is None:
-                raise RuntimeError(
-                    f"example {i}: answer-only semantic payload is not exactly "
-                    f"'Answer: A/B': {semantic!r}"
-                )
-            print(
-                f"Mask check OK (example {i}): {len(kept)}/{len(sample['input_ids'])} "
-                f"tokens trained; span={kept_text!r}"
-            )
-        elif supervision in (SUPERVISION_RATIONALE, SUPERVISION_GROUNDED):
-            if not kept_text.startswith(ANALYSIS_CHANNEL_PREFIX):
-                # Grounded fallback rows (unresolved items under --grounded-unresolved
-                # answer-only) legitimately carry the answer-only continuation instead.
-                if supervision == SUPERVISION_GROUNDED and kept_text.startswith(
-                    FINAL_CHANNEL_HEADER
-                ):
-                    print(
-                        f"Mask check OK (example {i}): {len(kept)}/"
-                        f"{len(sample['input_ids'])} tokens trained; grounded FALLBACK row "
-                        f"(direct final channel only): {kept_text!r}"
-                    )
-                    continue
-                raise RuntimeError(
-                    f"example {i}: {supervision} span does not open the analysis channel"
-                )
-            analysis = kept_text.split(ANALYSIS_CHANNEL_PREFIX, 1)[-1].split("<|end|>", 1)[0]
+        full, labels = sample["input_ids"], sample["labels"]
+        cont = list(sample.get("continuation_ids", ()))
+        prompt_len = len(full) - len(cont)
+        if (not cont or prompt_len <= 0 or len(labels) != len(full)
+                or labels[:prompt_len] != [-100] * prompt_len
+                or labels[prompt_len:] != cont or full[prompt_len:] != cont):
+            raise RuntimeError(f"example {i}: prompt mask / continuation span mismatch")
+        if cont[0] != channel_id:
+            raise RuntimeError(f"example {i}: malformed native channel opener")
+        text = tokenizer.decode(cont, skip_special_tokens=False)
+        fallback = supervision == SUPERVISION_GROUNDED and not sample.get("grounded_lm_enabled", True)
+        if supervision == SUPERVISION_ANSWER_ONLY or fallback:
+            if text not in {build_answer_only_continuation("Answer: " + letter, p) for letter in "AB"}:
+                raise RuntimeError(f"example {i}: direct continuation has unexpected analysis/payload")
+        else:
+            if not text.startswith(p.analysis_prefix) or p.analysis_to_final not in text:
+                raise RuntimeError(f"example {i}: missing native analysis/final boundary")
+            analysis, verdict = text[len(p.analysis_prefix):].rsplit(p.analysis_to_final, 1)
+            if verdict not in {"Answer: " + letter + p.return_token for letter in "AB"}:
+                raise RuntimeError(f"example {i}: malformed answer/turn-stop tail")
+            assert_student_content(analysis, "unmasked analysis", tokenizer)
             if supervision == SUPERVISION_GROUNDED:
                 if "Answer:" in analysis:
-                    raise RuntimeError(
-                        f"example {i}: grounded analysis contains 'Answer:'; the verdict "
-                        "belongs only in the final channel and the analysis must be "
-                        "orientation-invariant"
-                    )
+                    raise RuntimeError("grounded G must not carry the oriented answer verdict")
                 assert_rendered_analysis_shape(analysis)
-            print(
-                f"Mask check OK (example {i}): {len(kept)}/{len(sample['input_ids'])} "
-                f"tokens trained; analysis[:70]={analysis.strip()[:70]!r}"
-            )
-        else:
-            raise RuntimeError(f"unknown supervision objective {supervision!r}")
+        print(f"Mask check OK (example {i}): {len(cont)}/{len(full)} tokens; "
+              f"protocol={p.version}, fallback={fallback}, tail={text[-65:]!r}")
 
 
 def tokenize_rows(
@@ -5132,11 +5927,11 @@ def tokenize_rows(
     max_len,
     supervision=SUPERVISION_RATIONALE,
 ):
-    """Tokenize with the supervised harmony-continuation mask. ANY drop is data
+    """Tokenize with the supervised native-continuation mask. ANY drop is data
     corruption (prompts are ~2k tokens << max_len) and silently unbalances paired
     orientations — so we fail, not warn."""
     tokenized, dropped = [], []
-    control_ids = harmony_control_ids(tokenizer)
+    control_ids = native_control_ids(tokenizer)
     for row in rows:
         if supervision == SUPERVISION_RATIONALE and "rationale" not in row:
             raise RuntimeError(f"row {row['row_id']} has no resolved rationale — call "
@@ -5154,6 +5949,9 @@ def tokenize_rows(
         if supervision == SUPERVISION_GROUNDED and "grounded_analysis" not in row:
             raise RuntimeError(f"row {row['row_id']} has no resolved grounded analysis — "
                                "call resolve_grounded() before tokenize_rows().")
+        if supervision == SUPERVISION_GROUNDED and "grounded_lm_enabled" in row:
+            if bool(row["grounded_lm_enabled"]) != (row["grounded_analysis"] is not None):
+                raise RuntimeError("grounded fallback flag disagrees with analysis payload")
         rationale = row.get("rationale") if supervision == SUPERVISION_RATIONALE else None
         grounded_analysis = (row.get("grounded_analysis")
                              if supervision == SUPERVISION_GROUNDED else None)
@@ -5209,21 +6007,13 @@ def qh_letter_token_ids(tokenizer):
 
 
 def qh_prefill_token_ids(tokenizer, control_ids=None):
-    """Token ids of the harmony final-channel prefill, structurally validated."""
-    if control_ids is None:
-        control_ids = harmony_control_ids(tokenizer)
-    ids = list(tokenizer(FINAL_CHANNEL_PREFILL, add_special_tokens=False).input_ids)
-    if not ids:
-        raise RuntimeError("empty tokenization for the final-channel prefill scaffold")
-    if ids[0] != control_ids["<|channel|>"]:
-        raise RuntimeError(
-            f"final-channel prefill does not start with the canonical <|channel|> id "
-            f"(ids={ids}); the readout would be scored at a mis-placed slot."
-        )
-    if control_ids["<|message|>"] not in ids:
-        raise RuntimeError(
-            f"final-channel prefill lost its canonical <|message|> id (ids={ids})."
-        )
+    """Native direct prefill, including an explicitly CLOSED EMPTY thought for Qwen/Gemma."""
+    p = protocol_of(tokenizer)
+    control_ids = native_control_ids(tokenizer) if control_ids is None else control_ids
+    ids = list(tokenizer(p.direct_prefill, add_special_tokens=False).input_ids)
+    boundary = {"qwen3_5": "</think>", "gemma4": "<channel|>"}.get(p.family, "<|message|>")
+    if not ids or ids[0] != control_ids[p.channel_token] or control_ids[boundary] not in ids:
+        raise RuntimeError("direct prefill lost its native channel boundaries")
     return [int(i) for i in ids]
 
 
@@ -5232,18 +6022,19 @@ def assert_qy_answer_slot_letter_tokens(tokenizer, letter_ids, control_ids=None,
     """The aux loss MUST score the same token the answer-only arm supervises.
 
     Tokenizes the real answer-only continuation for both targets and checks that the
-    token immediately before <|return|> is exactly the ' A'/' B' id used by the q_h
+    token immediately before the native turn stop is exactly the ' A'/' B' id used by the q_h
     readout. Returns the (constant) answer-only continuation length C.
     """
     if control_ids is None:
-        control_ids = harmony_control_ids(tokenizer)
+        control_ids = native_control_ids(tokenizer)
     lengths = set()
     for letter, token_id in letter_ids.items():
-        continuation = build_answer_only_continuation(TARGET_TEMPLATE.format(letter=letter))
+        continuation = build_answer_only_continuation(
+            TARGET_TEMPLATE.format(letter=letter), protocol_of(tokenizer))
         cont_ids = list(tokenizer(continuation, add_special_tokens=False).input_ids)
-        if len(cont_ids) < 2 or cont_ids[-1] != control_ids["<|return|>"]:
+        if len(cont_ids) < 2 or cont_ids[-1] != control_ids[protocol_of(tokenizer).return_token]:
             raise RuntimeError(
-                f"answer-only continuation for {letter!r} does not end with <|return|> "
+                f"answer-only continuation for {letter!r} does not end with the native turn stop "
                 f"(ids={cont_ids})"
             )
         if int(cont_ids[-2]) != int(token_id):
@@ -5253,12 +6044,12 @@ def assert_qy_answer_slot_letter_tokens(tokenizer, letter_ids, control_ids=None,
                 "output symbol the Q_Y arm supervises."
             )
         if prefill_ids is not None:
-            expected = list(prefill_ids) + [int(token_id), control_ids["<|return|>"]]
+            expected = list(prefill_ids) + [int(token_id), control_ids[protocol_of(tokenizer).return_token]]
             if cont_ids != expected:
                 raise RuntimeError(
                     f"Q_Y answer-only continuation for {letter!r} is not exactly the "
                     "forced-choice final-channel prefill followed by its single letter and "
-                    f"<|return|>: got {cont_ids}, expected {expected}."
+                    f"native stop: got {cont_ids}, expected {expected}."
                 )
         lengths.add(len(cont_ids))
     if len(lengths) != 1:
@@ -5322,7 +6113,7 @@ def assemble_readout_input_ids(prompt_ids, prefill_ids, max_len, letter_token_id
 
 
 def assemble_qh_input_ids(prompt_ids, prefill_ids, max_len, letter_token_ids=()):
-    """Return the shared readout assembly under q_h-specific field names."""
+    """Backward-compatible q_h-key wrapper around the shared readout assembler."""
     rec = assemble_readout_input_ids(
         prompt_ids, prefill_ids, max_len, letter_token_ids, label="Q_H"
     )
@@ -5352,7 +6143,7 @@ def attach_qy_forced_choice_readouts(rows, tokenized_rows, prefill_ids, letter_i
     """Attach a no-letter q_m readout derived from each audited tokenized training row.
 
     The answer-only continuation is structurally pinned to
-    FINAL_CHANNEL_PREFILL ++ [target letter] ++ [RETURN_TOKEN]. Removing exactly the
+    student_protocol.direct_prefill ++ [target letter] ++ [native_turn_stop]. Removing exactly the
     final two tokens therefore exposes the same answer slot used by q_h without
     re-rendering the prompt or independently deriving its target.
     """
@@ -5384,7 +6175,7 @@ def attach_qy_forced_choice_readouts(rows, tokenized_rows, prefill_ids, letter_i
         if cont_ids[:-QY_READOUT_TAIL_TOKENS] != list(prefill_ids):
             raise RuntimeError(
                 f"Q_Y row {row_id} continuation does not begin with the exact "
-                "FINAL_CHANNEL_PREFILL token ids"
+                "student_protocol.direct_prefill token ids"
             )
         if cont_ids[-1] != int(return_token_id):
             raise RuntimeError(
@@ -5432,7 +6223,7 @@ def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_id
 
     Unlike the answer-only arm — where the readout is the audited input minus its last two
     tokens — a grounded row's continuation carries the analysis channel, so the readout is
-    rebuilt as `chat prompt ids ++ FINAL_CHANNEL_PREFILL ids`: the model must commit to a
+    rebuilt as `chat prompt ids ++ student_protocol.direct_prefill ids`: the model must commit to a
     letter with NO analysis in context. The prompt prefix is taken from the audited
     tokenized row (tokenize_with_target_mask already proved it is a token prefix of the
     full input), and the target letter comes from the audited row, cross-checked against
@@ -5471,14 +6262,17 @@ def attach_grounded_direct_readouts(rows, tokenized_rows, prefill_ids, letter_id
                 f"grounded row {row_id} has target letter {target_letter!r}"
             )
         # Contract: whatever the analysis, the continuation TAIL is exactly the
-        # final-channel prefill, the target letter, and the return token — the slot the
-        # production readout scores.
-        tail = cont_ids[-(len(prefill_ids) + QY_READOUT_TAIL_TOKENS):]
-        expected_tail = prefill_ids + [int(letter_ids[target_letter]), int(return_token_id)]
+        # LM answer suffix, the target letter, and the native stop. Gemma direct
+        # prefill additionally has an empty-thought opener and is NOT this LM tail.
+        suffix_ids = list(rec.get("lm_answer_suffix_ids", ()))
+        if not suffix_ids:
+            raise RuntimeError(f"grounded row {row_id} lacks audited LM answer suffix IDs")
+        tail = cont_ids[-(len(suffix_ids) + QY_READOUT_TAIL_TOKENS):]
+        expected_tail = suffix_ids + [int(letter_ids[target_letter]), int(return_token_id)]
         if tail != expected_tail:
             raise RuntimeError(
                 f"grounded row {row_id} continuation does not end with the exact "
-                f"final-channel prefill + letter + return ids: got {tail}, expected "
+                f"LM answer suffix + letter + native stop ids: got {tail}, expected "
                 f"{expected_tail}"
             )
         token_letter = inverse_letter_ids.get(cont_ids[-2])
@@ -5506,7 +6300,7 @@ def assert_qy_chat_template_tokenization_parity(rows, tokenized_rows, tokenizer,
                                                 seed=0):
     """The q_m string-tokenization prefix must equal chat-template tokenize=True.
 
-    Production forced-choice scoring uses apply_chat_template(tokenize=True). This guard
+    The student direct readout uses apply_chat_template(tokenize=True). This guard
     proves the already-audited q_m training prefix is byte/token equivalent before its
     forced-choice prefill is attached.
     """
@@ -5523,9 +6317,8 @@ def assert_qy_chat_template_tokenization_parity(rows, tokenized_rows, tokenizer,
             )
         continuation_ids = list(rec["continuation_ids"])
         prefix_ids = list(rec["input_ids"][:-len(continuation_ids)])
-        direct_ids = _as_id_list(tokenizer.apply_chat_template(
-            row["messages"][:-1], tokenize=True, add_generation_prompt=True
-        ))
+        direct_ids = _as_id_list(render_student_prompt(
+            tokenizer, row["messages"][:-1], tokenize=True))
         if prefix_ids != direct_ids:
             raise RuntimeError(
                 f"Q_Y row {row['row_id']} string-tokenized prompt differs from "
@@ -5534,28 +6327,14 @@ def assert_qy_chat_template_tokenization_parity(rows, tokenized_rows, tokenizer,
 
 
 def tokenize_qh_row(row, tokenizer, max_len, prefill_ids, letter_ids):
-    """Tokenize one q_h readout row exactly like the production forced-choice scorer."""
+    """Use the audited semantic q_h prompt with this student's native serialization."""
     messages = row["messages"]
     if len(messages) != 1 or messages[0].get("role") != "user":
         raise RuntimeError(f"Q_H row {row['row_id']} is not a single user message")
-    prefix_text = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
-    if not prefix_text.endswith(GENERATION_PROMPT_SUFFIX):
-        raise RuntimeError(
-            "Unexpected chat-template generation prompt suffix for the Q_H readout; expected "
-            f"it to end with {GENERATION_PROMPT_SUFFIX!r}, got tail {prefix_text[-120:]!r}."
-        )
-    if prefix_text.endswith(FINAL_CHANNEL_PREFILL):
-        raise RuntimeError(
-            "Chat template already prefilled the final channel; do not append "
-            "FINAL_CHANNEL_PREFILL as well."
-        )
-    # tokenize=True mirrors ForcedChoiceVerifier.prompt_ids exactly (the production
-    # readout never re-tokenizes the rendered string).
-    prompt_ids = _as_id_list(
-        tokenizer.apply_chat_template(messages, tokenize=True, add_generation_prompt=True)
-    )
+    prefix_text = render_student_prompt(tokenizer, messages)
+    prompt_ids = _as_id_list(render_student_prompt(tokenizer, messages, tokenize=True))
+    if prompt_ids != list(tokenizer(prefix_text, add_special_tokens=False).input_ids):
+        raise RuntimeError("Q_H string / native-template tokenization mismatch")
     rec = assemble_qh_input_ids(prompt_ids, prefill_ids, max_len,
                                 letter_token_ids=tuple(letter_ids.values()))
     if row["target_letter"] not in ("A", "B"):
@@ -5580,7 +6359,7 @@ def _check_readout_spans(records, tokenizer, input_ids_key, target_letter_key,
         rec = records[i]
         tail_ids = rec[input_ids_key][-24:]
         tail = tokenizer.decode(tail_ids, skip_special_tokens=False)
-        if not tail.endswith(FINAL_CHANNEL_PREFILL):
+        if not tail.endswith(protocol_of(tokenizer).direct_prefill):
             raise RuntimeError(
                 f"{label} example {i} ({rec['row_id']}) does not end at the final-channel answer "
                 f"slot; tail={tail!r}"
@@ -5610,9 +6389,9 @@ def _check_qy_readout_spans(records, tokenizer, n=3, seed=0):
 def constant_continuation_tokens(tokenized_rows):
     """C = the audited answer-only continuation length, which MUST be constant.
 
-    In forced-choice mode C is a structural check proving every q_m row has the same
-    prefill, letter, and return tail. In token-CE mode it also fixes the loss
-    normalization denominator.
+    In forced-choice mode C is only a structural contract proving every q_m row has
+    the same prefill + letter + return tail; it is not a loss denominator. In legacy
+    token-ce mode it additionally pins the historical normalization.
     """
     lengths = {len(r["continuation_ids"]) for r in tokenized_rows}
     if len(lengths) != 1:
@@ -5625,26 +6404,11 @@ def constant_continuation_tokens(tokenized_rows):
 
 
 def check_tokenizer(args):
-    from transformers import AutoTokenizer
-
-    # A stale/empty prepared-base directory must not shadow the hub tokenizer during
-    # this tokenizer-only audit (train/preflight separately requires a real config.json).
-    if os.path.isfile(os.path.join(BF16_DIR, "tokenizer_config.json")):
-        source = BF16_DIR
-    else:
-        source = MODEL_NAME
-        if os.path.isdir(BF16_DIR):
-            print(
-                f"WARNING: {BF16_DIR} exists but has no tokenizer_config.json; "
-                f"--check-tokenizer is auditing against {MODEL_NAME} instead. Training "
-                "preflight will still reject an incomplete prepared base.",
-                file=sys.stderr,
-            )
-    print(f"Loading tokenizer from {source} ...")
-    tokenizer = AutoTokenizer.from_pretrained(source)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    control_ids = harmony_control_ids(tokenizer)
+    spec, config, tokenizer, identity = load_student_assets(args)
+    protocol = spec.protocol
+    print(f"Student source={spec.source!r}, revision={spec.revision!r}, protocol={protocol.version}")
+    print(student_compatibility_note(spec.family))
+    control_ids = native_control_ids(tokenizer)
 
     tokenized = []
     all_base_rows = []
@@ -5674,14 +6438,14 @@ def check_tokenizer(args):
         supervision=supervision,
     )
     if supervision == SUPERVISION_ANSWER_ONLY:
-        mode = "answer-only (no analysis channel, no rationale)"
+        mode = "answer-only (no analysis payload, no rationale)"
     elif supervision == SUPERVISION_GROUNDED:
         mode = "per-item audited grounded analysis"
     elif getattr(args, "debug_constant_rationale", False):
         mode = "constant ANALYSIS_TARGET (debug)"
     else:
         mode = "per-example rationale"
-    print(f"--check-tokenizer complete: zero drops; supervised spans = {mode} harmony "
+    print(f"--check-tokenizer complete: zero drops; supervised spans = {mode} native "
           "continuations (token-level mask audit passed).")
 
     if supervision == SUPERVISION_GROUNDED:
@@ -5692,7 +6456,7 @@ def check_tokenizer(args):
             tokenizer, letter_ids, control_ids, prefill_ids=prefill_ids)  # not on --qh-aux
         attach_grounded_direct_readouts(
             all_base_rows, tokenized, prefill_ids, letter_ids,
-            control_ids["<|return|>"], args.max_len,
+            control_ids[protocol_of(tokenizer).return_token], args.max_len,
         )
         assert_qy_chat_template_tokenization_parity(
             all_base_rows, tokenized, tokenizer, n=None
@@ -5706,7 +6470,7 @@ def check_tokenizer(args):
         cont_lengths = sorted(len(r["continuation_ids"]) for r in tokenized)
         fallback = sum(1 for r in tokenized if not r.get("grounded_lm_enabled", True))
         print(f"--check-tokenizer [grounded] complete: direct-view readouts end at "
-              f"{FINAL_CHANNEL_PREFILL!r} with NO analysis in context; ' A'="
+              f"{protocol.direct_prefill!r} with NO analysis in context; ' A'="
               f"{letter_ids['A']} ' B'={letter_ids['B']}; targets A={target_dist['A']} "
               f"B={target_dist['B']}; continuation tokens min/median/max = "
               f"{cont_lengths[0]}/{cont_lengths[len(cont_lengths) // 2]}/"
@@ -5730,7 +6494,7 @@ def check_tokenizer(args):
         constant_c = None
         print(f"Grounded+Q_H token contracts OK: ' A'={letter_ids['A']} ' B'={letter_ids['B']} "
               "(single, distinct, identical to the Q_Y answer-slot letter tokens); "
-              f"Q_H prefill {FINAL_CHANNEL_PREFILL!r} -> {prefill_ids}; the grounded LM "
+              f"Q_H prefill {protocol.direct_prefill!r} -> {prefill_ids}; the grounded LM "
               "continuation is intentionally not treated as the answer-only C-token span.")
     else:
         constant_c = constant_continuation_tokens(tokenized)
@@ -5741,17 +6505,17 @@ def check_tokenizer(args):
             )
         print(f"Q_Y/Q_H token contracts OK: ' A'={letter_ids['A']} ' B'={letter_ids['B']} (single, "
               f"distinct, identical to the Q_Y answer-slot letter tokens); prefill "
-              f"{FINAL_CHANNEL_PREFILL!r} -> {prefill_ids}; answer-only continuation is a constant "
+              f"{protocol.direct_prefill!r} -> {prefill_ids}; answer-only continuation is a constant "
               f"C={constant_c} tokens.")
 
     if qy_loss == QY_LOSS_FORCED_CHOICE:
         if supervision != SUPERVISION_GROUNDED:
             attach_qy_forced_choice_readouts(
                 all_base_rows, tokenized, prefill_ids, letter_ids,
-                control_ids["<|return|>"], args.max_len,
+                control_ids[protocol_of(tokenizer).return_token], args.max_len,
             )
         # This is cheap relative to loading the tokenizer and proves every audited row
-        # has the same token prefix as production apply_chat_template(tokenize=True).
+        # has the same token prefix under this student's explicit thinking policy.
         assert_qy_chat_template_tokenization_parity(
             all_base_rows, tokenized, tokenizer, n=None
         )
@@ -5777,7 +6541,7 @@ def check_tokenizer(args):
         "same binary NLL; grounded+qh-aux defaults to lambda=2 because two grounded "
         "Y_true-supporting views are present"
         if qy_loss == QY_LOSS_FORCED_CHOICE
-        else f"token-CE Q_Y; its answer letter is averaged across C={constant_c} tokens"
+        else f"legacy token-CE Q_Y; its answer letter is diluted across C={constant_c} tokens"
     )
     print(f"--check-tokenizer [--qh-aux] complete: qy_loss={qy_loss!r}; "
           f"{len(qh_tokenized)} Q_H readout inputs, targets A={target_dist['A']} "
@@ -5792,45 +6556,51 @@ def _from_pretrained_compat(auto_cls, name_or_path, dtype, **kwargs):
     """transformers renamed torch_dtype= to dtype=; support both."""
     try:
         return auto_cls.from_pretrained(name_or_path, dtype=dtype, **kwargs)
-    except TypeError:
+    except TypeError as exc:
+        if "unexpected keyword argument 'dtype'" not in str(exc):
+            raise
         return auto_cls.from_pretrained(name_or_path, torch_dtype=dtype, **kwargs)
 
 
-def prepare_bf16():
+def prepare_bf16(args):
+    spec = resolve_student_spec(args)  # rejects dense families BEFORE imports or writes
+    if spec.family != "gpt-oss":
+        raise RuntimeError(f"--prepare-bf16 is OSS-only; {spec.family} loads direct BF16")
+    check_student_versions(spec.family)
     import torch
-    from transformers import AutoModelForCausalLM, AutoTokenizer, Mxfp4Config
-
-    if os.path.isdir(BF16_DIR):
-        raise RuntimeError(
-            f"{BF16_DIR} already exists — refusing to overwrite a prepared base. "
-            "Delete it manually if you really want to regenerate."
-        )
-    print(f"Dequantizing {MODEL_NAME} (MXFP4 -> bf16) on CPU; this is slow but one-time ...")
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Mxfp4Config
+    destination = getattr(args, "prepare_bf16_dir", None) or OSS_BF16_DIR
+    if os.path.exists(destination):
+        raise RuntimeError(f"{destination} already exists; refusing to overwrite prepared weights")
+    config = AutoConfig.from_pretrained(spec.source, **spec.load_kwargs())
+    validate_student_config(config, spec, allow_mxfp4=True)
+    quant = getattr(config, "quantization_config", {})
+    if not isinstance(quant, dict) or quant.get("quant_method") != "mxfp4":
+        raise RuntimeError("--prepare-bf16 input is not an MXFP4 GPT-OSS source")
+    if not spec.local_source:
+        commit = getattr(config, "_commit_hash", None)
+        if not commit:
+            raise RuntimeError("cannot pin OSS preparation input revision")
+        spec = replace(spec, revision=commit)
+    print(f"Dequantizing {spec.source}@{spec.revision} (MXFP4 -> BF16); one-time OSS only")
     model = _from_pretrained_compat(
-        AutoModelForCausalLM, MODEL_NAME, torch.bfloat16,
-        attn_implementation="eager",
-        quantization_config=Mxfp4Config(dequantize=True),
-        low_cpu_mem_usage=True,
-    )
-    if getattr(model.config, "quantization_config", None) is not None:
-        raise RuntimeError(
-            "quantization_config survived the dequantize load — this transformers "
-            "version did not strip it; a quantizer-free bf16 base cannot be saved. "
-            "Check the installed transformers version."
-        )
-    model.save_pretrained(BF16_DIR, safe_serialization=True)
-    AutoTokenizer.from_pretrained(MODEL_NAME).save_pretrained(BF16_DIR)
-
-    with open(os.path.join(BF16_DIR, "config.json")) as f:
+        AutoModelForCausalLM, spec.source, torch.bfloat16,
+        config=config, attn_implementation="eager",
+        quantization_config=Mxfp4Config(dequantize=True), low_cpu_mem_usage=True,
+        **spec.load_kwargs())
+    assert_no_quantizer(model.config, model)
+    model.save_pretrained(destination, safe_serialization=True)
+    AutoTokenizer.from_pretrained(spec.source, **spec.load_kwargs()).save_pretrained(destination)
+    with open(os.path.join(destination, "config.json")) as f:
         saved = json.load(f)
-    assert "quantization_config" not in saved, "saved config still has quantization_config"
-    saved_dtype = saved.get("dtype") or saved.get("torch_dtype")
-    assert saved_dtype == "bfloat16", f"saved base is {saved_dtype!r}, expected bfloat16"
-    print(f"Saved quantizer-free bf16 base + tokenizer to {BF16_DIR}.")
+    assert_no_quantizer(saved)
+    if (saved.get("dtype") or saved.get("torch_dtype")) != "bfloat16":
+        raise RuntimeError("saved OSS prepared base is not BF16")
+    print(f"Saved quantizer-free BF16 base + tokenizer to {destination}")
 
 
 # ---------------------------------------------------------------------------
-# Full-parameter training preflight
+# Preflight (the "fail clearly, never fall back to LoRA" requirement)
 # ---------------------------------------------------------------------------
 
 def _gb(n_bytes):
@@ -5838,50 +6608,54 @@ def _gb(n_bytes):
 
 
 def _memory_table(state_bytes_per_param=STATE_BYTES_PER_PARAM, overhead_gb=PER_GPU_OVERHEAD_GB,
-                  h100_gb=80):
+                  h100_gb=80, n_params=N_PARAMS_EST):
     lines = [f"    GPUs | sharded state/GPU + overhead | fits {h100_gb}GB H100?"]
     for w in (1, 2, 4, 8):
-        need = _gb(state_bytes_per_param * N_PARAMS_EST) / w + overhead_gb
+        need = _gb(state_bytes_per_param * n_params) / w + overhead_gb
         lines.append(f"    {w:>4} | {need:>7.0f} GB                    | "
                      f"{'yes' if need <= h100_gb * GPU_MEM_SAFETY else 'NO'}")
     return "\n".join(lines)
 
 
-def preflight(world_size, use_deepspeed):
+def preflight(world_size, use_deepspeed, args):
     import torch
     import transformers
 
+    spec, config, _, _ = load_student_assets(args)
+    check_student_versions(spec.family, torch_version=torch.__version__)
+    if world_size <= 0:
+        raise RuntimeError("world_size must be positive")
+    config_path = validate_accelerate_config(args, spec, world_size) if use_deepspeed else None
+    n_params = spec.n_params_est
+    config_hint = config_path or (DEEPSPEED_CONFIG_PATH if spec.family in DENSE_FAMILIES
+                                  else "config/accelerate-zero3.yaml")
     fsdp_tail = (
         "\nFSDP no-offload full FT keeps fp32 master weights/optimizer state on GPU "
         f"(~{STATE_BYTES_PER_PARAM} bytes/param of sharded state ~ "
-        f"{_gb(STATE_BYTES_PER_PARAM * N_PARAMS_EST):.0f} GiB total "
-        f"+ ~{PER_GPU_OVERHEAD_GB:.0f} GiB/GPU transients):\n" + _memory_table() +
-        "\nThis script performs full-parameter training and never substitutes LoRA. For 4x H100 "
+        f"{_gb(STATE_BYTES_PER_PARAM * n_params):.0f} GiB total "
+        f"+ ~{PER_GPU_OVERHEAD_GB:.0f} GiB/GPU transients):\n" + _memory_table(n_params=n_params) +
+        "\nThere is NO LoRA fallback in this script (project decision). For 4x H100 "
         "96GB + 512GB CPU RAM, use the DeepSpeed optimizer-offload path:\n"
-        f"  accelerate launch --config_file {DEEPSPEED_CONFIG_PATH} ft-verifier-oss-full.py"
+        f"  accelerate launch --config_file {config_hint} ft-verifier.py --accelerate-config {config_hint}"
     )
     ds_tail = (
         "\nDeepSpeed ZeRO-3 optimizer-offload full FT keeps fp32 optimizer/master "
         "state on CPU and bf16 params/grads sharded on GPU "
         f"(GPU estimate: ~{DS_GPU_BYTES_PER_PARAM} bytes/param + "
         f"~{DS_PER_GPU_OVERHEAD_GB:.0f} GiB/GPU; CPU offload estimate: "
-        f"~{_gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * N_PARAMS_EST):.0f} GiB plus "
+        f"~{_gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * n_params):.0f} GiB plus "
         "checkpoint/save headroom). There is NO LoRA fallback."
     )
     msg_tail = ds_tail if use_deepspeed else fsdp_tail
 
-    # Version pins (match ft-oss.py guidance; FSDP save behavior is version-sensitive).
-    def _vtuple(v):
-        return tuple(int(p.split("+")[0]) for p in v.split(".")[:3]
-                     if p.split("+")[0].isdigit())
-
-    tf_v = transformers.__version__
-    if not (_vtuple("4.56.2") <= _vtuple(tf_v) < _vtuple("5.0.0")):
-        raise RuntimeError(f"transformers {tf_v} unsupported; pin >=4.56.2,<5." + msg_tail)
-    torch_v = torch.__version__
-    if _vtuple(torch_v) < _vtuple("2.4.0"):
-        raise RuntimeError(f"torch {torch_v} is unsupported; need >= 2.4." + msg_tail)
-    import accelerate  # noqa: F401  (required by Trainer's FSDP/DeepSpeed paths)
+    tf_v, torch_v = transformers.__version__, torch.__version__
+    try:
+        import accelerate  # required only by training/preflight, not tokenizer audit
+        if use_deepspeed:
+            import deepspeed
+    except ImportError as exc:
+        raise RuntimeError("training preflight requires installed accelerate and (for ZeRO-3) "
+                           "deepspeed; no dependency was installed by this script") from exc
 
     if not torch.cuda.is_available():
         raise RuntimeError("No CUDA device available on this machine." + msg_tail)
@@ -5890,40 +6664,25 @@ def preflight(world_size, use_deepspeed):
         if os.environ.get("ACCELERATE_USE_DEEPSPEED", "false").lower() != "true":
             raise RuntimeError(
                 "DeepSpeed path requires launching through accelerate:\n"
-                f"  accelerate launch --config_file {DEEPSPEED_CONFIG_PATH} "
-                "ft-verifier-oss-full.py" + msg_tail
-            )
-        config_path = os.environ.get("ACCELERATE_CONFIG_FILE", DEEPSPEED_CONFIG_PATH)
-        if os.path.exists(config_path):
-            with open(config_path) as f:
-                config_text = f.read()
-        elif os.path.exists(DEEPSPEED_CONFIG_PATH):
-            with open(DEEPSPEED_CONFIG_PATH) as f:
-                config_text = f.read()
-        else:
-            raise RuntimeError(f"DeepSpeed config {DEEPSPEED_CONFIG_PATH} not found." + msg_tail)
-        if "offload_optimizer_device: cpu" not in config_text:
-            raise RuntimeError(
-                "DeepSpeed is enabled, but optimizer CPU offload is not configured. "
-                f"Use/update {DEEPSPEED_CONFIG_PATH} with offload_optimizer_device: cpu."
-                + msg_tail
+                f"  accelerate launch --config_file {config_hint} "
+                "ft-verifier.py" + msg_tail
             )
     elif os.environ.get("LOCAL_RANK") is None:
         raise RuntimeError("FSDP path requires a torchrun launch (LOCAL_RANK unset)." + msg_tail)
 
-    if 8 % world_size != 0:
+    if args.effective_batch <= 0 or args.effective_batch % world_size != 0:
         raise RuntimeError(
-            f"world_size={world_size} does not divide the target effective batch 8 — "
+            f"world_size={world_size} does not divide the requested effective batch — "
             "grad accumulation would be non-integer and the effective batch/LR would "
             "silently change. Use 8 GPUs (or a divisor of 8 with enough VRAM)." + msg_tail
         )
 
     n_gpu = torch.cuda.device_count()
     if use_deepspeed:
-        per_gpu_need = _gb(DS_GPU_BYTES_PER_PARAM * N_PARAMS_EST) / world_size + DS_PER_GPU_OVERHEAD_GB
-        cpu_need_gb = max(DS_MIN_CPU_RAM_GB, _gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * N_PARAMS_EST) + 160.0)
+        per_gpu_need = _gb(DS_GPU_BYTES_PER_PARAM * n_params) / world_size + DS_PER_GPU_OVERHEAD_GB
+        cpu_need_gb = max(DS_MIN_CPU_RAM_GB, _gb(DS_CPU_OFFLOAD_BYTES_PER_PARAM * n_params) + 160.0)
     else:
-        per_gpu_need = _gb(STATE_BYTES_PER_PARAM * N_PARAMS_EST) / world_size + PER_GPU_OVERHEAD_GB
+        per_gpu_need = _gb(STATE_BYTES_PER_PARAM * n_params) / world_size + PER_GPU_OVERHEAD_GB
         cpu_need_gb = MIN_CPU_RAM_GB
     min_vram = min(_gb(torch.cuda.get_device_properties(i).total_memory) for i in range(n_gpu))
     if per_gpu_need > GPU_MEM_SAFETY * min_vram:
@@ -5946,18 +6705,10 @@ def preflight(world_size, use_deepspeed):
     except (FileNotFoundError, StopIteration):
         print("WARNING: could not read /proc/meminfo; skipping CPU RAM preflight.")
 
-    # Both paths train from the prepared quantizer-free bf16 base: loading the
-    # MXFP4 hub repo directly would either re-enter the quantizer (FSDP: defeats
-    # rank0-only CPU loading; ZeRO-3: blocks zero3 init) or fail outright.
-    if not os.path.isdir(BF16_DIR) or not os.path.exists(os.path.join(BF16_DIR, "config.json")):
-        raise RuntimeError(
-            f"{BF16_DIR} missing — run `python3 ft-verifier-oss-full.py --prepare-bf16` "
-            "first (one-time MXFP4 -> bf16 dequantize)." + msg_tail
-        )
-    with open(os.path.join(BF16_DIR, "config.json")) as f:
-        if "quantization_config" in json.load(f):
-            raise RuntimeError(f"{BF16_DIR} still carries quantization_config — "
-                               "regenerate it with --prepare-bf16." + msg_tail)
+    # load_student_assets already verified the selected source/config, no BF16 fallback.
+    print(f"Selected student={spec.model_name}, source={spec.source}, revision={spec.revision}; "
+          f"nominal parameter estimate={n_params / 1e9:.1f}B; config={config_path}. "
+          "Estimates are not measured CUDA memory or throughput; 12B is not necessarily faster.")
 
     names = sorted({torch.cuda.get_device_properties(i).name for i in range(n_gpu)})
     print(f"Preflight OK: torch {torch_v}, transformers {tf_v}, {n_gpu} GPU(s) visible "
@@ -6045,7 +6796,7 @@ def forced_choice_leg(model, input_ids, attention_mask, target, label, letter_id
         )
     if int(input_ids[0, -1].detach()) != int(prefill_last_id):
         raise RuntimeError(
-            f"{label} forced-choice tensor does not end at FINAL_CHANNEL_PREFILL; "
+            f"{label} forced-choice tensor does not end at student_protocol.direct_prefill; "
             "refusing to score logits from the wrong input key or position"
         )
     target = target.view(-1)
@@ -6107,12 +6858,13 @@ class QHRunningStats:
 
 
 class QHPairCollator:
-    """Right-pad both legs of a paired ``(q_m, q_h)`` microbatch.
+    """Right-pad both legs of a paired (q_m, q_h) microbatch.
 
-    Token-CE q_m uses ``PadCollator``. In forced-choice mode, the q_m readout ends
-    immediately before its answer letter; labels remain only for Trainer's labelled-batch
-    evaluation routing. Both forced-choice readouts score their final position, which
-    requires microbatch size one.
+    The legacy q_m token-CE leg is delegated byte-for-byte to PadCollator. In the
+    symmetric mode, a second q_m view ends immediately before its answer letter; the
+    original labels remain in the batch only so Hugging Face Trainer recognizes a
+    labelled batch during evaluation. Both forced-choice readouts are scored at their
+    LAST position, hence the hard batch-size-1 requirement.
     """
 
     def __init__(self, pad_token_id, qy_loss=QY_LOSS_FORCED_CHOICE,
@@ -6146,6 +6898,10 @@ class QHPairCollator:
         target_letter = "A" if target == 0 else "B"
         if len(full_ids) < QY_READOUT_TAIL_TOKENS:
             raise RuntimeError("Q_Y tokenized row is too short to contain letter + return")
+        prompt_len = len(full_ids) - len(self.prefill_ids) - QY_READOUT_TAIL_TOKENS
+        if (prompt_len <= 0 or labels[:prompt_len] != [-100] * prompt_len
+                or labels[prompt_len:] != full_ids[prompt_len:]):
+            raise RuntimeError("answer-only prompt mask / continuation boundary mismatch")
         if readout_ids != full_ids[:-QY_READOUT_TAIL_TOKENS]:
             raise RuntimeError(
                 "Q_Y forced-choice readout is not exactly the audited input with its "
@@ -6161,6 +6917,8 @@ class QHPairCollator:
             )
         if full_ids[-1] != self.return_token_id:
             raise RuntimeError("Q_Y audited input does not end with the canonical return token")
+        if len(labels) != len(full_ids):
+            raise RuntimeError("labels/input length mismatch")
         if labels[-2] != full_ids[-2] or labels[-1] != full_ids[-1]:
             raise RuntimeError(
                 "Q_Y labels do not expose the same answer letter + return as the audited row"
@@ -6217,10 +6975,10 @@ def qh_aux_trainer_class(Trainer):
     class QHAuxTrainer(Trainer):
         """Two forwards (q_m then q_h), one backward on their weighted sum.
 
-        ``model_accepts_loss_kwargs`` is false so Trainer does not inject
-        ``num_items_in_batch``. The default mode applies one shared restricted-A/B NLL
-        implementation to both readouts; ``token-ce`` selects the alternate supervised-
-        continuation q_m objective.
+        model_accepts_loss_kwargs is forced False so the Trainer never injects
+        num_items_in_batch. The default symmetric mode applies one shared restricted
+        A/B NLL implementation to both readouts. The explicit legacy token-ce mode
+        preserves the old q_m model(labels=...).loss path for checkpoint reproduction.
         """
 
         def __init__(self, *args, qh_lambda=QH_AUX_DEFAULT_LAMBDA, qh_letter_ids=None,
@@ -6251,8 +7009,8 @@ def qh_aux_trainer_class(Trainer):
         def _forced_choice_leg(self, model, input_ids, attention_mask, target, label):
             """One shared last-position A/B NLL for both q_m and q_h.
 
-            Delegates to the module-level ``forced_choice_leg`` shared with the grounded
-            direct view."""
+            Thin delegate to the module-level forced_choice_leg() so the grounded arm's
+            direct view runs the identical implementation (behaviour unchanged)."""
             return forced_choice_leg(
                 model, input_ids, attention_mask, target, label,
                 self.qh_letter_id_a, self.qh_letter_id_b, self.qh_logits_kwarg,
@@ -6303,7 +7061,7 @@ def qh_aux_trainer_class(Trainer):
                 )
                 self.qy_logits_shape_seen = int(outputs_y.logits.shape[1])
             else:
-                # Alternate token-CE q_m objective over the audited continuation.
+                # Explicit checkpoint-reproduction path: byte-for-byte old q_m call.
                 outputs_y = model(
                     input_ids=input_ids,
                     attention_mask=inputs["attention_mask"],
@@ -6616,7 +7374,7 @@ class GroundedCollator:
     """Right-pad the grounded LM view and attach its DIRECT forced-choice view.
 
     The LM view is delegated byte-for-byte to PadCollator. The direct view is the same
-    chat prompt followed by FINAL_CHANNEL_PREFILL — no analysis in context — and is scored
+    chat prompt followed by student_protocol.direct_prefill — no analysis in context — and is scored
     at its LAST position, hence the hard batch-size-1 requirement. Every structural
     invariant is checked here, before any tensor exists, so a drifted readout fails closed
     instead of silently training on the wrong slot.
@@ -6650,6 +7408,9 @@ class GroundedCollator:
         if readout_ids[-len(self.prefill_ids):] != self.prefill_ids:
             raise RuntimeError("grounded direct readout does not end at the exact prefill")
         prompt_len = len(readout_ids) - len(self.prefill_ids)
+        if (prompt_len <= 0 or labels[:prompt_len] != [-100] * prompt_len
+                or labels[prompt_len:] != full_ids[prompt_len:]):
+            raise RuntimeError("grounded prompt mask / continuation boundary mismatch")
         if readout_ids[:prompt_len] != full_ids[:prompt_len]:
             raise RuntimeError(
                 "grounded direct readout prompt prefix differs from the LM view's prompt"
@@ -6662,6 +7423,8 @@ class GroundedCollator:
             raise RuntimeError(
                 "grounded audited input does not end with the canonical return token"
             )
+        if len(labels) != len(full_ids):
+            raise RuntimeError("labels/input length mismatch")
         if labels[-2] != full_ids[-2] or labels[-1] != full_ids[-1]:
             raise RuntimeError(
                 "grounded labels do not expose the same answer letter + return as the row"
@@ -6777,36 +7540,28 @@ def grounded_trainer_class(Trainer):
                 if is_training:
                     self.lm_forwards += 1
 
-            outputs_fc, loss_fc, log_p, z, target = forced_choice_leg(
-                model,
-                inputs["qy_readout_input_ids"],
-                inputs["qy_readout_attention_mask"],
-                inputs["qy_target_index"],
-                "grounded Q_Y",
-                self.letter_id_a,
-                self.letter_id_b,
-                self.grounded_logits_kwarg,
-                self.readout_prefill_last_id,
-            )
-            self.fc_logits_shape_seen = int(outputs_fc.logits.shape[1])
-            if is_training:
-                self.fc_forwards += 1
-            if self.grounded_smoke:
-                self._check_reference_nll(loss_fc, z, target, "grounded Q_Y")
-
-            loss = self.lambda_fc * loss_fc
+            outputs_fc = loss_fc = log_p = z = target = None
+            if self.lambda_fc != 0.0:
+                outputs_fc, loss_fc, log_p, z, target = forced_choice_leg(
+                    model, inputs["qy_readout_input_ids"], inputs["qy_readout_attention_mask"],
+                    inputs["qy_target_index"], "grounded Q_Y", self.letter_id_a,
+                    self.letter_id_b, self.grounded_logits_kwarg, self.readout_prefill_last_id)
+                self.fc_logits_shape_seen = int(outputs_fc.logits.shape[1])
+                if is_training:
+                    self.fc_forwards += 1
+                if self.grounded_smoke:
+                    self._check_reference_nll(loss_fc, z, target, "grounded Q_Y")
+            if loss_lm is None and loss_fc is None:
+                raise RuntimeError("grounded row has no active loss leg (fallback/zero lambdas)")
+            loss = self.lambda_fc * loss_fc if loss_fc is not None else None
             if loss_lm is not None:
-                loss = self.lambda_lm * loss_lm + loss
-
+                loss = self.lambda_lm * loss_lm if loss is None else self.lambda_lm * loss_lm + loss
             with torch.no_grad():
-                values = {
-                    "loss_fc": float(loss_fc.detach()),
-                    "fc_p_target": float(
-                        log_p.detach().gather(0, target).squeeze(0).exp()
-                    ),
-                    "fc_acc": float(log_p.detach().argmax(0) == target.squeeze(0)),
-                    "lm_view_used": float(loss_lm is not None),
-                }
+                values = {"lm_view_used": float(loss_lm is not None)}
+                if loss_fc is not None:
+                    values.update(loss_fc=float(loss_fc.detach()),
+                                  fc_p_target=float(log_p.detach().gather(0, target).squeeze(0).exp()),
+                                  fc_acc=float(log_p.detach().argmax(0) == target.squeeze(0)))
                 if loss_lm is not None:
                     values["loss_lm"] = float(loss_lm.detach())
             if is_training:
@@ -6847,10 +7602,20 @@ def effective_output_dir(args):
     return output_dir
 
 
-def guard_checkpoint_identity(output_dir, args):
+def guard_checkpoint_identity(output_dir, args, student_identity=None):
     """Refuse to overwrite checkpoint metadata from a different ablation arm."""
     metadata_path = os.path.join(output_dir, "training-metadata.json")
+    if student_identity is None:
+        student_identity = load_student_assets(args)[3]
+    source = student_identity["source"]
+    if os.path.isdir(source):
+        out, src = os.path.realpath(output_dir), os.path.realpath(source)
+        if os.path.commonpath([out, src]) == out:
+            raise RuntimeError("output directory must not overwrite or contain the model source")
     if not os.path.isfile(metadata_path):
+        if os.path.exists(output_dir) and (not os.path.isdir(output_dir) or os.listdir(output_dir)):
+            raise RuntimeError(f"refusing non-empty output {output_dir!r}: no model/protocol identity metadata; "
+                               "existing weights cannot be attributed safely")
         return
     try:
         with open(metadata_path) as f:
@@ -6860,16 +7625,42 @@ def guard_checkpoint_identity(output_dir, args):
             f"cannot safely inspect existing checkpoint metadata {metadata_path}: {exc}"
         ) from exc
 
-    # Missing ``qh_aux`` denotes a checkpoint without the auxiliary q_h view.
+    if existing.get("student_identity") != student_identity:
+        raise RuntimeError(f"refusing to overwrite {output_dir!r}: model/source/revision/protocol/template "
+                           "identity differs or is absent. Metadata from a different student family "
+                           f"is not proof of {student_identity.get('family')!r} identity; use a fresh "
+                           "output directory or the unchanged legacy script.")
+
+    weight_paths = [name for name in os.listdir(output_dir)
+                    if name.endswith((".safetensors", ".bin")) or name.startswith("checkpoint-")]
+    config_path = os.path.join(output_dir, "config.json")
+    if weight_paths and not os.path.isfile(config_path):
+        raise RuntimeError("existing output weights lack their full-wrapper config; identity cannot be verified")
+    if os.path.isfile(config_path):
+        with open(config_path) as f:
+            saved_config = json.load(f)
+        assert_no_quantizer(saved_config)
+        expected_type = STUDENT_MODEL_TYPES[student_identity["family"]]
+        expected_arch = STUDENT_ARCHITECTURES[student_identity["family"]]
+        if (saved_config.get("model_type") != expected_type
+                or saved_config.get("architectures") != [expected_arch]):
+            raise RuntimeError("existing checkpoint config disagrees with claimed student identity")
+
+    # Legacy objective metadata predates --qh-aux; absent keys mean the pure arm, so an
+    # unchanged pure run still matches its own old checkpoint.
     existing_qh_aux = bool(existing.get("qh_aux", False))
-    # Missing ``qy_loss`` on a q_h-aux checkpoint denotes token CE. This prevents a
-    # forced-choice run from overwriting a scientifically different checkpoint.
+    # The first q_h-aux checkpoints predate qy_loss and used token CE for q_m.
+    # Treating an absent field as that legacy objective prevents the new default from
+    # silently overwriting a scientifically different checkpoint.
     existing_qy_loss = (
         existing.get("qy_loss", QY_LOSS_TOKEN_CE) if existing_qh_aux else None
     )
-    # Grounded identity keys are null for non-grounded runs. Artifact/training-set
-    # digests remain audit metadata rather than checkpoint-directory identity because a
-    # valid teacher regeneration changes those digests.
+    # Grounded identity keys. They are None for every non-grounded run AND absent from all
+    # pre-grounded metadata, so legacy rationale / answer-only / qh-aux checkpoints keep
+    # matching their own re-runs exactly as before. Artifact/training-set digests are
+    # deliberately NOT here: they change on every legitimate teacher regeneration, and
+    # locking the checkpoint dir on them would break resume. They stay in metadata as
+    # auditable provenance.
     existing_grounded = existing.get("supervision") == SUPERVISION_GROUNDED
     existing_identity = (
         existing.get("dataset"),
@@ -6899,7 +7690,7 @@ def guard_checkpoint_identity(output_dir, args):
         raise RuntimeError(
             f"refusing to overwrite {output_dir!r}: existing checkpoint identity "
             f"{existing_identity!r} != requested {requested_identity!r}. Choose a new "
-            "--output-dir or deliberately move the existing checkpoint."
+            "--output-dir or remove/move the old checkpoint deliberately."
         )
 
 
@@ -6918,7 +7709,7 @@ def train(args):
     rank = int(os.environ.get("RANK", "0"))
     is_main = rank == 0
 
-    # The constant rationale is restricted to smoke and tokenizer validation.
+    # --debug-constant-rationale can never produce a REAL checkpoint (Codex #1).
     if getattr(args, "debug_constant_rationale", False) and not args.smoke:
         raise SystemExit("--debug-constant-rationale is only valid with --smoke or "
                          "--check-tokenizer; a real training run must use verified offline "
@@ -6931,9 +7722,13 @@ def train(args):
         )
 
     output_dir = effective_output_dir(args)
-    guard_checkpoint_identity(output_dir, args)
+    spec, model_config, tokenizer, student_identity = load_student_assets(args)
+    protocol = spec.protocol
+    if is_main:
+        print("COMPATIBILITY NOTICE: " + student_compatibility_note(spec.family), flush=True)
+    guard_checkpoint_identity(output_dir, args, student_identity)
     patch_multiprocess_resource_tracker_shutdown()
-    preflight(world_size, use_deepspeed)
+    preflight(world_size, use_deepspeed, args)
 
     import torch
     import transformers
@@ -7067,6 +7862,8 @@ def train(args):
         gradient_checkpointing=True,
         gradient_checkpointing_kwargs={"use_reentrant": False},
     )
+    if spec.family in HF5_FAMILIES:
+        ta_kwargs.update(average_tokens_across_devices=False, prediction_loss_only=True)
     if grounded:
         # ONLY on this arm. num_items_in_batch is never computed (model_accepts_loss_kwargs
         # is forced False), so cross-device token averaging would be dead code. The split
@@ -7075,35 +7872,29 @@ def train(args):
         # being None.
         ta_kwargs.update(average_tokens_across_devices=False, prediction_loss_only=True)
     if qh_aux:
-        # ``num_items_in_batch`` is disabled for the paired objective, so cross-device
-        # token averaging would add an unused collective. Both forced-choice legs are one
-        # decision; token CE keeps its device-local continuation normalization.
+        # ONLY on this arm. The pure/rationale paths keep the historical
+        # TrainingArguments exactly, so their checkpoints stay reproducible.
+        # Here num_items_in_batch is never computed (model_accepts_loss_kwargs is
+        # forced False), so cross-device token averaging would be dead code that
+        # only adds a collective. In forced-choice mode both legs are one decision;
+        # legacy token-ce retains the previous device-local normalization exactly.
         ta_kwargs.update(average_tokens_across_devices=False)
     if args.smoke:
         ta_kwargs.update(max_steps=2, eval_strategy="no")
     if not use_deepspeed:
-        ta_kwargs.update(
-            fsdp="full_shard auto_wrap",
-            fsdp_config={
-                "transformer_layer_cls_to_wrap": ["GptOssDecoderLayer"],
-                "state_dict_type": "FULL_STATE_DICT",
-                "use_orig_params": True,
-                "cpu_ram_efficient_loading": True,
-                "sync_module_states": True,
-            },
-        )
+        ta_kwargs.update(student_fsdp_kwargs(spec))
     training_args = TrainingArguments(**ta_kwargs)
-    if qh_aux and getattr(training_args, "average_tokens_across_devices", None) is not False:
+    if use_deepspeed:
+        validate_runtime_deepspeed(training_args, spec, grad_accum)
+    if (qh_aux or grounded or spec.family in HF5_FAMILIES) and getattr(training_args, "average_tokens_across_devices", None) is not False:
         raise RuntimeError(
-            "TrainingArguments.average_tokens_across_devices did not stay False under "
-            f"--qh-aux (got {getattr(training_args, 'average_tokens_across_devices', None)!r}); "
-            "the paired Q_Y/Q_H objective requires explicit device-local normalization."
+            "TrainingArguments.average_tokens_across_devices did not stay False for "
+            f"family={spec.family}, supervision={supervision}, qh_aux={qh_aux} "
+            f"(got {getattr(training_args, 'average_tokens_across_devices', None)!r}); "
+            "this objective requires explicit device-local normalization."
         )
 
-    model_source = BF16_DIR
-    tokenizer = AutoTokenizer.from_pretrained(model_source)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
+    model_source = spec.source
 
     # Data: rebuild, drift-guard against the audited artifacts, tokenize.
     # (Every rank needs the rows; only rank 0 narrates.)
@@ -7186,10 +7977,10 @@ def train(args):
 
     grounded_letter_ids = grounded_prefill_ids = None
     if grounded:
-        control_ids = harmony_control_ids(tokenizer)
+        control_ids = native_control_ids(tokenizer)
         # Shared readout helpers: they depend only on the imported score_verifier
-        # constants, not on --qh-aux, so the grounded direct view scores exactly the slot
-        # the production evaluator reads.
+        # semantic prompts; native serialization is selected by the student protocol,
+        # NOT by the unchanged OSS production evaluator.
         grounded_letter_ids = qh_letter_token_ids(tokenizer)
         grounded_prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)
         assert_qy_answer_slot_letter_tokens(
@@ -7197,12 +7988,12 @@ def train(args):
         )
         attach_grounded_direct_readouts(
             train_rows, train_tok, grounded_prefill_ids, grounded_letter_ids,
-            control_ids["<|return|>"], args.max_len,
+            control_ids[protocol_of(tokenizer).return_token], args.max_len,
         )
         if not args.train_all:
             attach_grounded_direct_readouts(
                 eval_rows, eval_tok, grounded_prefill_ids, grounded_letter_ids,
-                control_ids["<|return|>"], args.max_len,
+                control_ids[protocol_of(tokenizer).return_token], args.max_len,
             )
         # Run on every rank so a tokenization-contract failure cannot be rank-specific.
         assert_qy_chat_template_tokenization_parity(train_rows, train_tok, tokenizer, n=None)
@@ -7224,7 +8015,7 @@ def train(args):
     # --smoke truncation. Metadata's training-set hash is taken from exactly these.
     qh_train_selected, qh_eval_selected = [], []
     if qh_aux:
-        control_ids = harmony_control_ids(tokenizer)
+        control_ids = native_control_ids(tokenizer)
         qh_letter_ids = qh_letter_token_ids(tokenizer)
         qh_prefill_ids = qh_prefill_token_ids(tokenizer, control_ids)
         reference_c = assert_qy_answer_slot_letter_tokens(
@@ -7247,12 +8038,12 @@ def train(args):
             if not grounded:
                 attach_qy_forced_choice_readouts(
                     train_rows, train_tok, qh_prefill_ids, qh_letter_ids,
-                    control_ids["<|return|>"], args.max_len,
+                    control_ids[protocol_of(tokenizer).return_token], args.max_len,
                 )
                 if not args.train_all:
                     attach_qy_forced_choice_readouts(
                         eval_rows, eval_tok, qh_prefill_ids, qh_letter_ids,
-                        control_ids["<|return|>"], args.max_len,
+                        control_ids[protocol_of(tokenizer).return_token], args.max_len,
                     )
             # Run on every rank so a tokenization-contract failure cannot be rank-specific.
             assert_qy_chat_template_tokenization_parity(
@@ -7275,7 +8066,7 @@ def train(args):
             weighting = (
                 "lambda=1 is equal per-decision weighting"
                 if qy_loss == QY_LOSS_FORCED_CHOICE
-                else f"token-CE Q_Y over C={qy_continuation_token_count} tokens"
+                else f"legacy Q_Y token CE over C={qy_continuation_token_count} tokens"
             )
             print(f"Q_H aux ON: qy_loss={qy_loss!r}, lambda={qh_lambda} ({weighting}), "
                   f"target semantic {cfg['qh_target_semantic']}, ' A'={qh_letter_ids['A']} "
@@ -7295,14 +8086,7 @@ def train(args):
     load_dtype = torch.bfloat16 if use_deepspeed else torch.float32
     if is_main:
         print(f"Loading {model_source} in {load_dtype} ...")
-    model = _from_pretrained_compat(
-        AutoModelForCausalLM, model_source, load_dtype,
-        attn_implementation="eager",
-        use_cache=False,
-    )
-    if getattr(model.config, "quantization_config", None) is not None:
-        raise RuntimeError("model loaded WITH quantization_config — full FT requires the "
-                           "dequantized base (run --prepare-bf16).")
+    model = load_student_model(spec, model_config, load_dtype)
     def logical_numel(param):
         # ZeRO-3 init can materialize parameters as local shards/placeholders;
         # DeepSpeed keeps the global size in ds_numel when param.numel() is 0.
@@ -7312,9 +8096,16 @@ def train(args):
     n_trainable = sum(logical_numel(p) for p in model.parameters() if p.requires_grad)
     if n_trainable != n_params:
         raise RuntimeError(f"only {n_trainable}/{n_params} params trainable — full FT "
-                           "requires every parameter to receive gradients.")
+                           "requires every parameter to be eligible for gradients (requires_grad=True).")
     if is_main:
-        print(f"Model loaded: {n_params / 1e9:.2f}B params, 100% trainable (full FT).")
+        print(f"Model loaded: {n_params / 1e9:.2f}B params, 100% eligible for gradients (full FT).")
+        if spec.family in DENSE_FAMILIES:
+            print(f"Full {STUDENT_ARCHITECTURES[spec.family]} wrapper retained; text-only batches "
+                  "leave multimedia projections unused (grad=None). This is not a "
+                  "frozen-language/LoRA model.")
+        if spec.family == "qwen3_5":
+            print("The 15 official mtp.* auxiliary weights are NOT part of this architecture and "
+                  "are neither trained nor saved (declared native boundary).")
 
     grounded_logits_kwarg = None
     if grounded:
@@ -7351,7 +8142,7 @@ def train(args):
                 qy_loss=QY_LOSS_FORCED_CHOICE,
                 letter_ids=qh_letter_ids,
                 prefill_ids=qh_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=control_ids[protocol_of(tokenizer).return_token],
             ),
             lambda_lm=lambda_lm,
             lambda_fc=lambda_fc,
@@ -7377,7 +8168,7 @@ def train(args):
                 qy_loss=qy_loss,
                 letter_ids=qh_letter_ids,
                 prefill_ids=qh_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=control_ids[protocol_of(tokenizer).return_token],
             ),
             qh_lambda=qh_lambda,
             qh_letter_ids=qh_letter_ids,
@@ -7401,7 +8192,7 @@ def train(args):
                 tokenizer.pad_token_id,
                 letter_ids=grounded_letter_ids,
                 prefill_ids=grounded_prefill_ids,
-                return_token_id=control_ids["<|return|>"],
+                return_token_id=control_ids[protocol_of(tokenizer).return_token],
             ),
             lambda_lm=lambda_lm,
             lambda_fc=lambda_fc,
@@ -7423,11 +8214,14 @@ def train(args):
             eval_dataset=eval_ds,
             data_collator=PadCollator(tokenizer.pad_token_id),
         )
+    if spec.family in HF5_FAMILIES and not (qh_aux or grounded):
+        # Native ForCausalLMLoss remains a device-local token mean on plain LM arms.
+        trainer.model_accepts_loss_kwargs = False
     trainer.train()
     if qh_aux:
         if grounded:
             expected_qy_forwards = 0 if lambda_fc == 0.0 else None
-            if expected_qy_forwards is not None and trainer.qy_forwards == 0:
+            if expected_qy_forwards is None and trainer.qy_forwards == 0:
                 raise RuntimeError(
                     "the grounded direct Q_Y forward never ran; the combined objective "
                     "was inert."
@@ -7462,11 +8256,12 @@ def train(args):
                 f"--lambda-lm 0 must skip the grounded LM forward exactly, but it ran "
                 f"{trainer.lm_forwards} time(s)."
             )
-        if lambda_lm != 0.0 and trainer.lm_forwards == 0:
+        if (lambda_lm != 0.0 and any(r.get("grounded_lm_enabled", True) for r in train_tok)
+                and trainer.lm_forwards == 0):
             raise RuntimeError("the grounded LM forward never ran; View 1 was inert.")
 
     # Final save: all ranks join the FULL_STATE_DICT gather; rank0 casts fp32 ->
-    # bf16 (~42 GB instead of 84) and writes the checkpoint.
+    # bf16 (2 bytes per logical parameter) and writes the full-wrapper checkpoint.
     wrapped = trainer.model_wrapped if trainer.model_wrapped is not None else trainer.model
     state_dict = trainer.accelerator.get_state_dict(wrapped)
     if trainer.is_world_process_zero():
@@ -7475,18 +8270,18 @@ def train(args):
             for k, v in state_dict.items()
         }
         unwrapped = trainer.accelerator.unwrap_model(wrapped)
-        unwrapped.save_pretrained(output_dir, state_dict=bf16_state, safe_serialization=True)
-        tokenizer.save_pretrained(output_dir)
-
-        with open(os.path.join(output_dir, "config.json")) as f:
-            saved = json.load(f)
-        assert "quantization_config" not in saved, "saved checkpoint carries quantization_config"
+        save_student_checkpoint(unwrapped, tokenizer, output_dir, bf16_state, spec)
 
         if supervision == SUPERVISION_ANSWER_ONLY:
             forced_choice_qy = qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE
             rationale_supervision = {
                 "mode": "none-answer-only",
-                "analysis_channel_supervised": False,
+                "analysis_channel_supervised": False,  # no analysis payload
+                # Qwen and Gemma direct views carry an explicitly CLOSED EMPTY thought
+                # block; the legacy OSS direct view has no thought scaffold at all.
+                "empty_thought_scaffold_present": protocol.family in ("qwen3_5", "gemma4"),
+                "empty_thought_scaffold_supervised": (protocol.family in ("qwen3_5", "gemma4")
+                                                      and not forced_choice_qy),
                 "rationale_artifacts_used": False,
                 "note": (
                     "No rationale was loaded, attached, or teacher-forced; Q_Y is supervised "
@@ -7499,15 +8294,15 @@ def train(args):
             if forced_choice_qy:
                 loss_mask = (
                     "Q_Y forced-choice branch: no token labels are passed to model(); input "
-                    "ends at FINAL_CHANNEL_PREFILL and restricted NLL scores only ' A'/' B'. "
+                    "ends at student_protocol.direct_prefill and restricted NLL scores only ' A'/' B'. "
                     "The audited answer-only labels remain in the batch solely for Trainer "
                     "evaluation routing and fail-closed target/readout checks; no analysis "
                     "channel, rationale, format scaffold, or return token contributes loss"
                 )
             else:
                 loss_mask = (
-                    "prompt masked; supervised continuation = direct harmony final-channel "
-                    "format scaffold + 'Answer: X' + return token; no analysis channel or rationale"
+                    "prompt masked; supervised continuation = student native direct-answer "
+                    "format scaffold + 'Answer: X' + native stop; no analysis payload or rationale"
                 )
         elif supervision == SUPERVISION_GROUNDED:
             rationale_supervision = {
@@ -7528,7 +8323,7 @@ def train(args):
                 "analysis + explicit final-channel transition + 'Answer: X' + return token "
                 "(stock token-mean CE); PLUS View 2, a restricted A/B forced-choice NLL at "
                 "the direct final-channel answer slot whose input is the SAME chat prompt "
-                "followed by FINAL_CHANNEL_PREFILL with NO analysis in context. Fallback "
+                "followed by student_protocol.direct_prefill with NO analysis in context. Fallback "
                 "rows (unresolved items under --grounded-unresolved answer-only) carry the "
                 "answer-only continuation and contribute View 2 only"
             )
@@ -7612,7 +8407,7 @@ def train(args):
                 "unresolved_count": len(unresolved_ids),
                 "unresolved_pair_ids": unresolved_ids,
                 "grounded_fallback_rows": grounded_fallback_rows,
-                "final_channel_prefill": FINAL_CHANNEL_PREFILL,
+                "final_channel_prefill": protocol.direct_prefill,
                 "final_channel_prefill_token_ids": grounded_prefill_ids,
                 "label_completions": dict(LABEL_COMPLETIONS),
                 "label_completion_token_ids": grounded_letter_ids,
@@ -7623,7 +8418,7 @@ def train(args):
                 "fc_forward_calls": trainer.fc_forwards,
                 "forward_count_scope": "training microbatches only; evaluation excluded",
                 "qy_readout_source": (
-                    "the audited Q_Y chat prompt followed by FINAL_CHANNEL_PREFILL; the "
+                    "the audited Q_Y chat prompt followed by student_protocol.direct_prefill; the "
                     "grounded analysis is NEVER in context for this view"
                 ),
                 "qh_absent": not qh_aux,
@@ -7673,7 +8468,7 @@ def train(args):
                 "qy_continuation_token_count_role": (
                     "structural/tokenizer audit only; it is not a loss denominator"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "token-CE continuation loss denominator"
+                    "legacy token-CE loss denominator"
                 ),
                 "target_semantic": cfg["qh_target_semantic"],
                 "target_semantic_policy":
@@ -7684,21 +8479,21 @@ def train(args):
                 ),
                 "readout_prompt_version": QH_READOUT_PROMPT_VERSION,
                 "readout_template_sha256": QH_TEMPLATE_SHA256,
-                "readout_source": "adversarial_transcript.score_verifier (imported read-only)",
-                "final_channel_prefill": FINAL_CHANNEL_PREFILL,
+                "readout_source": "semantic Q_H prompt: score_verifier (read-only); serialization: student_protocol",
+                "final_channel_prefill": protocol.direct_prefill,
                 "final_channel_prefill_token_ids": qh_prefill_ids,
                 "label_completions": dict(LABEL_COMPLETIONS),
                 "label_completion_token_ids": qh_letter_ids,
                 "qy_answer_slot_letter_token_ids": qh_letter_ids,
                 "qy_readout_source": (
                     "the grounded View 2 readout: audited Q_Y chat prompt + transcript "
-                    "followed by FINAL_CHANNEL_PREFILL with no grounded analysis in context"
+                    "followed by student_protocol.direct_prefill with no grounded analysis in context"
                     if grounded else
                     "exact audited tokenized Q_Y input_ids with only the final target-letter "
                     "and canonical return-token ids removed; equivalently, the unchanged "
-                    "Q_Y chat prompt + transcript followed by FINAL_CHANNEL_PREFILL"
+                    "Q_Y chat prompt + transcript followed by student_protocol.direct_prefill"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "model(labels=...).loss over the audited answer-only continuation"
+                    "legacy model(labels=...).loss over the audited answer-only continuation"
                 ),
                 "qy_readout_prompt_template": (
                     "the grounded View 2 audited Q_Y chat prompt (same direct readout as the "
@@ -7717,7 +8512,7 @@ def train(args):
                     "retained in batch for Trainer labelled-evaluation routing and collator "
                     "contract checks; never passed to model in the forced-choice branch"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "passed to the model for token CE"
+                    "passed to model for legacy token CE"
                 ),
                 "logits_to_keep_kwarg": qh_logits_kwarg,
                 "qy_logits_positions_returned": trainer.qy_logits_shape_seen,
@@ -7755,7 +8550,7 @@ def train(args):
                     "one paired (Q_Y, Q_H) example; two forced-choice forwards using the "
                     "same A/B NLL (Y then H), one backward on the weighted sum"
                     if qy_loss == QY_LOSS_FORCED_CHOICE else
-                    "one paired (Q_Y, Q_H) example; token-CE Y forward then "
+                    "one paired (Q_Y, Q_H) example; legacy token-CE Y forward then "
                     "forced-choice H forward, one backward on the weighted sum"
                 ),
                 "semantics_note": (
@@ -7765,11 +8560,17 @@ def train(args):
             }
 
         metadata = {
-            "model_name": MODEL_NAME,
+            "model_name": spec.model_name,
+            "student_identity": student_identity,
+            "student_compatibility": student_compatibility_note(spec.family),
+            "student_protocol": {"version": protocol.version, "template_version": protocol.template_version,
+                                 "direct_prefill": protocol.direct_prefill,
+                                 "lm_answer_suffix": protocol.answer_suffix,
+                                 "enable_thinking": protocol.enable_thinking},
             "dataset": args.dataset,
             "mode": args.mode,
             "supervision": supervision,
-            # Read by ``guard_checkpoint_identity``.
+            # Read by guard_checkpoint_identity; absent in pre-2026-08 metadata.
             "qh_aux": qh_aux,
             "qh_lambda": qh_lambda if qh_aux else None,
             "qy_loss": qy_loss if qh_aux else None,
@@ -7780,13 +8581,13 @@ def train(args):
             "grounded_unresolved_policy": grounded_unresolved,
             "supervised_continuation_template":
                 (None if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE and not grounded
-                 else supervised_continuation_template(supervision)),
+                 else supervised_continuation_template(supervision, protocol)),
             "audited_answer_only_continuation_template":
-                (supervised_continuation_template(supervision)
+                (supervised_continuation_template(supervision, protocol)
                  if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE and not grounded else None),
             "forced_choice_readout_input_suffix":
-                (FINAL_CHANNEL_PREFILL
-                 if qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE else None),
+                (protocol.direct_prefill
+                 if grounded or (qh_aux and qy_loss == QY_LOSS_FORCED_CHOICE) else None),
             "dataset_path": cfg["dataset_path"],
             "stories_path": cfg["stories_path"],
             "transcript_field": cfg["transcript_field"],
@@ -7805,7 +8606,9 @@ def train(args):
             "dtype_policy": ("bf16 load; DeepSpeed ZeRO-3 keeps fp32 masters" if use_deepspeed
                              else "fp32 master weights + bf16 MixedPrecision via FSDP"),
             "distributed": {"path": "deepspeed-zero3" if use_deepspeed else "fsdp",
-                            "world_size": world_size},
+                            "world_size": world_size,
+                            "accelerate_config": selected_accelerate_config(args, spec) if use_deepspeed else None,
+                            "fsdp_config": None if use_deepspeed else student_fsdp_kwargs(spec)},
             "hyperparameters": {
                 "learning_rate": args.lr,
                 "num_train_epochs": args.epochs,
@@ -7827,6 +8630,8 @@ def train(args):
                 "torch": torch.__version__,
                 "transformers": transformers.__version__,
                 "accelerate": accelerate.__version__,
+                "tokenizers": package_version("tokenizers"),
+                "deepspeed": package_version("deepspeed") if use_deepspeed else None,
             },
             "git_commit": _git_commit(),
             "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -7854,6 +8659,31 @@ class _ExplicitRationaleValue(argparse.Action):
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--model-name", default=None, choices=tuple(MODEL_FAMILIES),
+                        help=f"canonical student identity (default {MODEL_NAME}); each name "
+                             "selects exactly one family")
+    parser.add_argument("--model-family", default=None, choices=tuple(PROTOCOLS),
+                        help="validate/choose student family; cannot contradict --model-name")
+    parser.add_argument("--model-source", default=None,
+                        help="one hub ID or local directory used for config/tokenizer/weights; "
+                             "dense families (qwen3_5, gemma4) default to their direct BF16 hub "
+                             "identity, OSS to its prepared BF16 directory")
+    parser.add_argument("--model-revision", default=None,
+                        help=f"pin hub revision (defaults: qwen3_5 {QWEN_REVISION}, "
+                             f"gemma4 {GEMMA_REVISION}); for a local snapshot must equal its "
+                             "commit directory name")
+    parser.add_argument("--model-cache-dir", default=None, help="HF model/tokenizer cache directory")
+    parser.add_argument("--local-files-only", action="store_true", help="use cached/local assets only; no downloads")
+    parser.add_argument("--bf16-source", default=None,
+                        help="OSS-only prepared input alias for --model-source (dense families "
+                             "are already BF16)")
+    parser.add_argument("--prepare-bf16-dir", default=None, help="OSS preparation output (requires --prepare-bf16)")
+    parser.add_argument("--accelerate-config", default=None,
+                        help="exact YAML passed to accelerate launch --config_file; explicitly "
+                             "required for DeepSpeed launches. Offline config checks otherwise "
+                             "default to the family YAML; no fallback to another file")
+    parser.add_argument("--preflight", action="store_true",
+                        help="read-only student/dependency/config/hardware audit; no weights loaded")
     parser.add_argument(
         "--dataset", default=DEFAULT_DATASET, metavar="NAME",
         help="dataset directory/name under dataset/<NAME>/; expects "
@@ -7870,13 +8700,15 @@ def main():
         choices=SUPERVISION_MODES,
         default=SUPERVISION_RATIONALE,
         help=(
-            "training target: rationale uses an analysis+rationale+final continuation; "
-            "answer-only goes directly to the final channel and supervises "
-            "only its format scaffold plus Answer: A/B (no rationale artifacts are read "
+            "training target: rationale keeps the historical analysis+rationale+final "
+            "continuation; answer-only goes directly to the final channel and supervises "
+            "only its native format scaffold plus Answer: A/B (Qwen/Gemma: closed empty "
+            "thought; no rationale artifacts are read "
             "or written); grounded supervises a per-item, mechanically audited, "
             "orientation-invariant evidence/check/winner analysis PLUS a restricted A/B "
-            "forced-choice loss at the direct answer slot (no Q_H term unless --qh-aux "
-            "is supplied). Default: %(default)s"
+            "forced-choice loss at the direct answer slot (no implicit Q_H term; --qh-aux "
+            "explicitly adds the positive-control Q_H view). "
+            "Defaults to %(default)s; teacher/artifact defaults remain independent of the student"
         ),
     )
     parser.add_argument("--check-data", action="store_true",
@@ -7886,8 +8718,8 @@ def main():
                         help="tokenizer-only (cluster): tokenize all rows, verify mask "
                              "spans + token lengths, exit")
     parser.add_argument("--prepare-bf16", action="store_true",
-                        help="one-time (cluster): dequantize MXFP4 -> bf16 and save the "
-                             f"quantizer-free base to {BF16_DIR}")
+                        help=f"OSS-only MXFP4 -> BF16 preparation (default {OSS_BF16_DIR}); "
+                             "dense families explicitly reject this unnecessary step")
     parser.add_argument("--generate-rationales", action="store_true",
                         help="(cluster/GPU) generate + validate the per-example rationale "
                              "targets for --split and write the rationale jsonl + manifest")
@@ -7900,9 +8732,9 @@ def main():
                              "jsonl + manifest (requires --supervision grounded)")
     parser.add_argument(
         "--generate-grounded-workers", type=int, default=None, metavar="N",
-        help=f"local Transformers worker count for --generate-grounded (default "
-             f"{GROUNDED_WORKERS_DEFAULT}); use when no vLLM server is available. "
-             "N>1 spawns one isolated process "
+        help=f"LEGACY transformers multi-GPU fallback for --generate-grounded (default "
+             f"{GROUNDED_WORKERS_DEFAULT} = the historical single-GPU, single-threaded "
+             "path), for when no vLLM server is available. N>1 SPAWNS one isolated process "
              "per GPU (each pins itself with CUDA_VISIBLE_DEVICES) and runs N per-item tier "
              "ladders concurrently; the artifact stays in canonical item order with a "
              "single writer, and seeds stay per-(row_id, attempt, epoch). With "
@@ -7950,7 +8782,7 @@ def main():
     parser.add_argument(
         "--qh-aux", action="store_true",
         help="EXPLICIT POSITIVE CONTROL (default OFF): add a directly supervised Q_H "
-             "forced-choice term, built from the production score_verifier readout. By "
+             "forced-choice term, using the shared semantic Q_H prompt and student native protocol. By "
              "default answer-only Q_Y is changed to the symmetric single-letter "
              "forced-choice loss; with --supervision grounded it adds Q_H to the existing "
              "grounded LM + direct Q_Y views. Requires --supervision answer-only or grounded. "
@@ -7960,15 +8792,16 @@ def main():
     parser.add_argument(
         "--qy-loss", choices=QY_LOSS_MODES, default=None,
         help="Q_Y objective inside --qh-aux: forced-choice (default) applies the exact same "
-             "single-letter restricted A/B NLL as Q_H; token-ce selects the C-token "
-             "answer-only Q_Y objective. Has no meaning without --qh-aux")
+             "single-letter restricted A/B NLL as Q_H; token-ce explicitly reproduces the "
+             "legacy C-token answer-only objective (diagnostic logging now names the Q_H "
+             "probability qh_p_target rather than p_target). Has no meaning without --qh-aux")
     parser.add_argument(
         "--qh-lambda", type=float, default=None, metavar="LAMBDA",
         help=f"weight of the Q_H term (default {QH_AUX_DEFAULT_LAMBDA}; requires --qh-aux). "
              "With --supervision grounded, this is the third-view Q_H weight and the default "
              "2 reflects the two Y_true-supporting grounded views. In answer-only forced-choice "
              "mode, lambda=1 is the equal-per-decision comparison value (not necessarily equal "
-             "parameter-gradient norms). With token CE, the Q_Y letter is averaged over C "
+             "parameter-gradient norms). With legacy token-ce, Q_Y remains diluted over C "
              "tokens. 0 is a smoke-only plumbing value that skips the Q_H forward entirely")
     parser.add_argument(
         "--lambda-lm", type=float, default=None, metavar="LAMBDA",
@@ -7979,7 +8812,7 @@ def main():
         "--lambda-fc", type=float, default=None, metavar="LAMBDA",
         help=f"weight of the direct forced-choice view (default "
              f"{GROUNDED_LAMBDA_FC_DEFAULT}; requires --supervision grounded). It is the "
-             "only term training the UNCONDITIONED decision at the deployed readout slot; "
+             "only term training the UNCONDITIONED decision at this student protocol readout slot; "
              "0 is a --smoke-only plumbing value")
     parser.add_argument(
         "--grounded-unresolved", choices=GROUNDED_UNRESOLVED_POLICIES, default=None,
@@ -7990,11 +8823,11 @@ def main():
              "forced-choice view only. Neither policy drops an item")
     parser.add_argument("--smoke", action="store_true",
                         help="2 optimizer steps on 8 rows + the full save path, to a "
-                             "-smoke dir (validate FSDP save before the real run)")
+                             "-smoke dir (validate the full-wrapper distributed save before the real run)")
     parser.add_argument("--lr", type=float, default=1e-5,
                         help="full-FT learning rate (gpt-oss-recipes full SFT uses 2e-5 "
                              "on far more data; 5e-6 is the conservative fallback)")
-    parser.add_argument("--epochs", type=float, default=3)
+    parser.add_argument("--epochs", type=float, default=2)
     parser.add_argument("--train-all", action="store_true",
                         help="for real training, merge the audited train+eval splits into "
                              "the training set and disable Trainer evaluation; rationale "
@@ -8005,12 +8838,18 @@ def main():
     parser.add_argument("--max-len", type=int, default=MAX_SEQ_LEN)
     parser.add_argument("--output-dir", default=None,
                         help="checkpoint output dir (default is selected by "
-                             "--dataset/--mode/--supervision; "
+                             "--model-name/--dataset/--mode/--supervision; "
                              f"{DEFAULT_OUTPUT_DIR.format(dataset=DEFAULT_DATASET)!r} "
                              "for default rationale/honest runs and "
                              f"{DEFAULT_ANSWER_ONLY_OUTPUT_DIR.format(dataset=DEFAULT_DATASET)!r} "
                              "for answer-only/honest runs)")
     args = parser.parse_args()
+    if args.prepare_bf16_dir and not args.prepare_bf16:
+        parser.error("--prepare-bf16-dir requires --prepare-bf16")
+    try:
+        resolve_student_spec(args)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     # q_h auxiliary guards run FIRST: they resolve args.qh_lambda, which mode_config
     # and every downstream path read. Grounded+q_h is intentionally a separate combined
@@ -8085,7 +8924,7 @@ def main():
     if (args.generate_grounded and args.teacher_backend == "api"
             and grounded_workers_of(args) > 1):
         sys.exit(
-            "--generate-grounded-workers > 1 selects local multi-GPU Transformers workers and "
+            "--generate-grounded-workers > 1 is the legacy multi-GPU transformers path and "
             "cannot be combined with --teacher-backend api: it would multiply to "
             f"workers x concurrency ({grounded_workers_of(args)} x "
             f"{grounded_concurrency_of(args)}) in-flight requests against one server. Use "
@@ -8122,7 +8961,7 @@ def main():
     if args.output_dir is None:
         args.output_dir = cfg["output_dir"]
 
-    modes = (args.check_data, args.check_tokenizer, args.prepare_bf16,
+    modes = (args.preflight, args.check_data, args.check_tokenizer, args.prepare_bf16,
              args.generate_rationales, args.check_rationales,
              args.generate_grounded, args.check_grounded)
     if sum(modes) > 1:
@@ -8211,7 +9050,12 @@ def main():
         check_tokenizer(args)
         return
     if args.prepare_bf16:
-        prepare_bf16()
+        prepare_bf16(args)
+        return
+
+    if args.preflight:
+        preflight(int(os.environ.get("WORLD_SIZE", "1")),
+                  os.environ.get("ACCELERATE_USE_DEEPSPEED", "false").lower() == "true", args)
         return
 
     train(args)

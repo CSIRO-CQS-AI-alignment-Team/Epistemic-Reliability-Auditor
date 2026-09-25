@@ -3,7 +3,7 @@
 This is the whole-pool counterpart of ``gcg.run``. ``gcg.run`` optimizes one suffix
 shared by every task in the spec it is handed; feeding it a many-candidate spec would
 therefore produce a *universal* suffix. This module instead builds one two-task spec
-per candidate (exactly ``Q_Y`` + ``Q_H``, sharing that candidate's single editable
+per candidate (exactly ``q_m`` + ``q_h``, sharing that candidate's single editable
 span) and runs one :class:`~gcg.optimizer.GCGOptimizer` per candidate, so no suffix is
 ever shared across candidates.
 
@@ -388,7 +388,7 @@ def build_candidate_spec(
     qh_weight: float,
     conditions: Sequence[str],
 ) -> dict[str, Any]:
-    """One spec for ONE candidate: exactly the Q_Y and Q_H readouts."""
+    """One spec for ONE candidate: exactly the q_m and q_h readouts."""
 
     spec = prepare_module.build_spec(
         [row],

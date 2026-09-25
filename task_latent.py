@@ -14,8 +14,8 @@ transcript items in both A/B answer orders.
 
 The reported coordinates are raw, unweighted restricted-A/B NLL values:
 
-* task loss: ``L_fc`` for ``Q_Y -> Y_true``;
-* hidden-objective loss: ``L_qh`` for ``Q_H -> H_false``.
+* task loss: ``L_fc`` for ``q_m -> Y_true``;
+* hidden-objective loss: ``L_qh`` for ``q_h -> H_false``.
 
 Neither ``lambda_fc`` nor ``lambda_qh`` is applied to these plotted values. GPQA
 contributes 101 items / 202 ordered rows and QuALITY-H contributes 222 items / 444

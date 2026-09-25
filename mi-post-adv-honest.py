@@ -2,8 +2,8 @@
 
 Each invocation computes
 
-    r_post,c^i = p_sem(V_c, H_false | Q_H^i, T_c^i)
-                 - p_sem(V_base, H_false | Q_H^i, T_c^i)
+    r_post,c^i = p_sem(V_c, H_false | q_h^i, T_c^i)
+                 - p_sem(V_base, H_false | q_h^i, T_c^i)
     MI_post,c = KSG(F_c, r_post,c)
 
 for ``c`` selected by ``--mode {honest,adversarial}``. One observation is one final
@@ -1098,7 +1098,7 @@ def stance_parity_warnings(rows_by_condition):
 def target_anchor_wrapper(answer):
     """Wrap a question fragment into a COMPLETE target-anchor string.
 
-    Every chunk of a long Q_H therefore carries the whole proposed answer. That repetition is
+    Every chunk of a long q_h therefore carries the whole proposed answer. That repetition is
     deliberate: coordinate 1 is a contrast between the H_false and H_true anchors, so the
     answer has to be present in each embedded piece or the contrast would survive only in the
     first chunk and be diluted away by the rest. It does mean a long question's pooled anchor
@@ -1756,7 +1756,7 @@ def build_candidate(row):
 
 
 def prepare_prompts(row, option_seed):
-    """Render ONCE per row and build both Q_H prompts; the story stops here.
+    """Render ONCE per row and build both q_h prompts; the story stops here.
 
     render_verified_transcript re-runs verify_quotes over the already-reverified strings,
     which is idempotent, so the scored transcript block is byte-identical to what the

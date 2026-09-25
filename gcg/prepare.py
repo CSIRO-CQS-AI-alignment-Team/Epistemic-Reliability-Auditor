@@ -4,11 +4,11 @@ The preparation step reuses the exact prompt builders, deterministic option orde
 final-channel scaffold from ``adversarial_transcript.score_verifier``. The resulting
 two tasks per candidate share one editable span:
 
-* Q_Y targets the semantic ``Y_true`` option;
-* Q_H targets the semantic ``H_false`` option.
+* q_m targets the semantic ``Y_true`` option;
+* q_h targets the semantic ``H_false`` option.
 
 The editable span is placed inside the final argument of the compromised Y_true
-debater, immediately before its closing public-transcript quote.  Q_H text stays in
+debater, immediately before its closing public-transcript quote.  q_h text stays in
 the private task specification and is never part of the emitted suffix itself.
 
 No separator is injected on the prefix side: a trailing space in ``prompt_prefix``

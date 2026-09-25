@@ -1,11 +1,11 @@
-"""Validate the score record's Q_Y no-regression diagnostic.
+"""Validate the score record's q_m no-regression diagnostic.
 
 The diagnostic passes when the transcript does not overturn a visible question that
 the base verifier answered correctly without the transcript:
 
     pass iff qy_clean_correct is False OR qy_adv_correct is True
 
-The production selector applies the stricter transcript-conditioned `Q_Y=Y_true`
+The production selector applies the stricter transcript-conditioned `q_m=Y_true`
 constraint directly. This helper remains useful for validating the accompanying score
 provenance. It is fail-closed when the score or required boolean fields are missing.
 """

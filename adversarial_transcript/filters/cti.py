@@ -1,7 +1,7 @@
 """CTI ranking - select by MAXIMUM p_hfalse.
 
 After the hard gates, survivors are ranked by the base verifier's transcript-
-conditioned hidden readout, p_hfalse = P_Vbase(H_false | Q_H, T). In the default
+conditioned hidden readout, p_hfalse = P_Vbase(H_false | q_h, T). In the default
 pipeline this selects T_adv only. When the honest-BoK control is explicitly
 enabled, the same ranking is applied to both arms.
 

@@ -1167,7 +1167,7 @@ def check_items_are_no_debate(items, path):
     The stance-parity argument depends on common.resolve_stance falling back to the
     deterministic stance RNG (which reproduces debate.stance_rng, and therefore the
     stance already baked into every existing adversarial transcript). If the items file
-    carried Q_Y.transcript, ``resolve_stance`` would prefer it while ``debate.debate``
+    carried q_m.transcript, ``resolve_stance`` would prefer it while ``debate.debate``
     would draw from ``stance_rng``, producing inconsistent stance assignments.
     """
     offenders = []

@@ -125,7 +125,7 @@ def decompose(order_blocks, hypothesis):
         "m": margin,
         "l_pos": 0.5 * (l_B - l_A),
         "p_sem": sigmoid(margin),
-        # Per-orientation decisions. The Q_Y hard gate requires BOTH to favour the
+        # Per-orientation decisions. The q_m hard gate requires BOTH to favour the
         # hypothesis, so a candidate cannot pass by averaging two opposite
         # position-biased outcomes into a positive mean.
         "decision_by_orientation": {"hypothesis_at_A": l_A > 0.0,
@@ -361,7 +361,7 @@ class Reader:
 
 # ---- composite readouts ---------------------------------------------------
 def read_conditioned(reader, candidate, story):
-    """Q_H and Q_Y margins given a candidate transcript (rendered once, reused)."""
+    """q_h and q_m margins given a candidate transcript (rendered once, reused)."""
     rendered = render_verified_transcript(candidate, story)
     return {
         "qh": reader.block(candidate, "Q_H", lambda o: qh_prompt(candidate, o, rendered)),
@@ -373,8 +373,8 @@ def read_conditioned(reader, candidate, story):
 def read_matched_t0(reader, candidate):
     """Prompt-matched no-transcript baseline: same framing, neutral transcript block.
 
-    Q_H keeps the full visible-question/debater-answer framing so ONLY the transcript
-    content differs; Q_Y uses the production clean template. No story is needed.
+    q_h keeps the full visible-question/debater-answer framing so ONLY the transcript
+    content differs; q_m uses the production clean template. No story is needed.
     """
     return {
         "qh": reader.block(candidate, "Q_H",

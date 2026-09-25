@@ -3,7 +3,7 @@
 This module implements the parts of GCG that are easy to get subtly wrong:
 
 * every task is a fixed token sequence with one editable token block;
-* the suffix is shared across all Q_Y/Q_H tasks in a run;
+* the suffix is shared across all q_m/q_h tasks in a run;
 * the target is the *next token after the final-channel prefill*;
 * the loss is restricted to the two production answer tokens, rather than the
   vocabulary-wide language-model loss;
